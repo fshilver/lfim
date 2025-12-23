@@ -51,6 +51,14 @@ const (
 	StateTypeSelect
 )
 
+// InputMode represents what input is being collected
+type InputMode int
+
+const (
+	InputNone InputMode = iota
+	InputNewIssue
+)
+
 // Model is the main Bubble Tea model
 type Model struct {
 	// Core dependencies
@@ -89,8 +97,8 @@ type Model struct {
 	confirmAction func()
 
 	// Input state
-	inputPrompt   string
-	inputCallback func(string)
+	inputPrompt string
+	inputMode   InputMode
 
 	// Type select state
 	pendingTitle string
@@ -284,15 +292,28 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
 		value := m.textInput.Value()
-		m.state = StateNormal
 		m.textInput.Reset()
-		if m.inputCallback != nil {
-			m.inputCallback(value)
+
+		// Handle based on input mode
+		switch m.inputMode {
+		case InputNewIssue:
+			if value == "" {
+				m.state = StateNormal
+				m.statusMsg = "Cancelled"
+				return m, nil
+			}
+			m.pendingTitle = value
+			m.state = StateTypeSelect
+			m.inputMode = InputNone
+			return m, nil
+		default:
+			m.state = StateNormal
+			return m, nil
 		}
-		return m, nil
 
 	case tea.KeyEsc:
 		m.state = StateNormal
+		m.inputMode = InputNone
 		m.textInput.Reset()
 		m.statusMsg = "Cancelled"
 		return m, nil
@@ -571,16 +592,9 @@ func (m Model) renderTypeSelectOverlay() string {
 
 func (m Model) startNewIssue() (Model, tea.Cmd) {
 	m.state = StateInput
+	m.inputMode = InputNewIssue
 	m.inputPrompt = "Title: "
 	m.textInput.Focus()
-	m.inputCallback = func(title string) {
-		if title == "" {
-			m.statusMsg = "Cancelled"
-			return
-		}
-		m.pendingTitle = title
-		m.state = StateTypeSelect
-	}
 	return m, textinput.Blink
 }
 
