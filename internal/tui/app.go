@@ -50,6 +50,7 @@ const (
 	StateConfirm
 	StateTypeSelect
 	StateReviewPreview
+	StatePlanPreview
 	StateCommitConfirm
 	StateCommitGenerating
 )
@@ -61,6 +62,7 @@ const (
 	InputNone InputMode = iota
 	InputNewIssue
 	InputReview
+	InputPlanReview
 )
 
 // Model is the main Bubble Tea model
@@ -109,6 +111,7 @@ type Model struct {
 
 	// Review state
 	reviewAnalysis string
+	reviewPlan     string
 
 	// Commit state
 	pendingCommitMsg  string
@@ -249,6 +252,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTypeSelectKey(msg)
 	case StateReviewPreview:
 		return m.handleReviewPreviewKey(msg)
+	case StatePlanPreview:
+		return m.handlePlanPreviewKey(msg)
 	case StateCommitConfirm:
 		return m.handleCommitConfirmKey(msg)
 	case StateCommitGenerating:
@@ -297,6 +302,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Review):
 		return m.reviewIssue()
 
+	case key.Matches(msg, m.keys.PlanReview):
+		return m.planReviewIssue()
+
 	case key.Matches(msg, m.keys.Refresh):
 		m.statusMsg = "Refreshed"
 		return m, m.refreshIssues()
@@ -339,6 +347,17 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputMode = InputNone
 			m.reviewAnalysis = ""
 			return m.executeReview(value)
+		case InputPlanReview:
+			if value == "" {
+				// Go back to plan preview
+				m.state = StatePlanPreview
+				m.inputMode = InputNone
+				return m, nil
+			}
+			m.state = StateNormal
+			m.inputMode = InputNone
+			m.reviewPlan = ""
+			return m.executePlanReview(value)
 		default:
 			m.state = StateNormal
 			return m, nil
@@ -348,6 +367,13 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.inputMode == InputReview {
 			// Go back to review preview
 			m.state = StateReviewPreview
+			m.inputMode = InputNone
+			m.textInput.Reset()
+			return m, nil
+		}
+		if m.inputMode == InputPlanReview {
+			// Go back to plan preview
+			m.state = StatePlanPreview
 			m.inputMode = InputNone
 			m.textInput.Reset()
 			return m, nil
@@ -438,6 +464,47 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handlePlanPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	// Scroll keys
+	case "up", "k":
+		m.viewport.LineUp(1)
+		return m, nil
+	case "down", "j":
+		m.viewport.LineDown(1)
+		return m, nil
+	case "pgup", "ctrl+u":
+		m.viewport.HalfViewUp()
+		return m, nil
+	case "pgdown", "ctrl+d":
+		m.viewport.HalfViewDown()
+		return m, nil
+	case "home", "g":
+		m.viewport.GotoTop()
+		return m, nil
+	case "end", "G":
+		m.viewport.GotoBottom()
+		return m, nil
+
+	// Action keys
+	case "e":
+		return m.editPlan()
+	case "f":
+		// Switch to feedback input mode
+		m.state = StateInput
+		m.inputMode = InputPlanReview
+		m.inputPrompt = "Plan Feedback: "
+		m.textInput.Focus()
+		return m, textinput.Blink
+	case "c", "esc":
+		m.state = StateNormal
+		m.reviewPlan = ""
+		return m, nil
+	}
+
+	return m, nil
+}
+
 func (m Model) handleCommitConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	// Scroll keys
@@ -522,6 +589,16 @@ func (m *Model) handleResult(result claude.TaskResult) {
 		} else {
 			m.statusMsg = fmt.Sprintf("Review %s failed", result.IssueID)
 		}
+	case "plan-review":
+		if result.Success {
+			_ = m.storage.SavePlan(result.IssueID, result.Result)
+			if result.SessionID != "" {
+				_ = m.storage.SaveSessionID(result.IssueID, result.SessionID)
+			}
+			m.statusMsg = fmt.Sprintf("Plan reviewed %s", result.IssueID)
+		} else {
+			m.statusMsg = fmt.Sprintf("Plan review %s failed", result.IssueID)
+		}
 	case "commit":
 		if result.Success {
 			m.pendingCommitMsg = strings.TrimSpace(result.Result)
@@ -570,7 +647,7 @@ func (m Model) View() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, previewPanel)
 
 	// Render footer
-	keys := "[n]ew [a]nalyze [R]eview [p]lan [c]lose [d]iscard [e]dit [f]ilter [q]uit"
+	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [c]lose [d]iscard [e]dit [f]ilter [q]uit"
 	footer := m.styles.Footer.Render(keys)
 	status := m.styles.StatusBar.Render(m.statusMsg)
 
@@ -585,6 +662,8 @@ func (m Model) View() string {
 		overlay = m.renderTypeSelectOverlay()
 	case StateReviewPreview:
 		overlay = m.renderReviewPreviewOverlay()
+	case StatePlanPreview:
+		overlay = m.renderPlanPreviewOverlay()
 	case StateCommitConfirm:
 		overlay = m.renderCommitConfirmOverlay()
 	case StateCommitGenerating:
@@ -800,6 +879,34 @@ func (m Model) renderReviewPreviewOverlay() string {
 	)
 }
 
+func (m Model) renderPlanPreviewOverlay() string {
+	// Calculate width based on terminal size
+	popupWidth := m.width - 10
+	if popupWidth < 60 {
+		popupWidth = 60
+	}
+	if popupWidth > 100 {
+		popupWidth = 100
+	}
+
+	// Scroll indicator
+	scrollPercent := m.viewport.ScrollPercent() * 100
+	scrollInfo := fmt.Sprintf(" %3.0f%% ", scrollPercent)
+
+	// Help text for actions
+	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll"
+
+	return m.styles.PopupBorder.Width(popupWidth).Render(
+		fmt.Sprintf("%s\n%s\n%s%s\n\n%s",
+			m.styles.PopupTitle.Render("Review Plan:"),
+			m.viewport.View(),
+			strings.Repeat("─", popupWidth-10),
+			scrollInfo,
+			helpText,
+		),
+	)
+}
+
 func (m Model) renderCommitConfirmOverlay() string {
 	// Calculate width based on terminal size
 	popupWidth := m.width - 10
@@ -936,6 +1043,33 @@ func (m Model) editAnalysis() (Model, tea.Cmd) {
 	m.reviewAnalysis = ""
 
 	cmd := exec.Command(editor, analysisPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return refreshRequestMsg{}
+	})
+}
+
+func (m Model) editPlan() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	planPath := m.storage.PlanPath(issue.ID)
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	// Reset plan review state before opening editor
+	m.state = StateNormal
+	m.reviewPlan = ""
+
+	cmd := exec.Command(editor, planPath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -1116,6 +1250,56 @@ func (m Model) reviewIssue() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) planReviewIssue() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	if !m.storage.PlanExists(issue.ID) {
+		m.statusMsg = "Plan first (press 'p')"
+		return m, nil
+	}
+
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processingLock.Unlock()
+
+	// Load plan for preview
+	plan, err := m.storage.LoadPlan(issue.ID)
+	if err != nil {
+		m.statusMsg = "Failed to load plan"
+		return m, nil
+	}
+	m.reviewPlan = plan
+
+	// Setup viewport for scrollable plan
+	viewportHeight := m.height - 10
+	if viewportHeight < 10 {
+		viewportHeight = 10
+	}
+	viewportWidth := m.width - 14
+	if viewportWidth < 50 {
+		viewportWidth = 50
+	}
+	if viewportWidth > 96 {
+		viewportWidth = 96
+	}
+	m.viewport.Width = viewportWidth
+	m.viewport.Height = viewportHeight
+	m.viewport.SetContent(plan)
+	m.viewport.GotoTop()
+
+	// Enter plan preview mode
+	m.state = StatePlanPreview
+	return m, nil
+}
+
 func (m Model) executeReview(feedback string) (Model, tea.Cmd) {
 	issue := m.getSelectedIssue()
 	if issue == nil {
@@ -1140,6 +1324,34 @@ func (m Model) executeReview(feedback string) (Model, tea.Cmd) {
 
 	m.statusMsg = fmt.Sprintf("Reviewing %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "review", prompt, "", sessionID, m.resultChan)
+
+	return m, nil
+}
+
+func (m Model) executePlanReview(feedback string) (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processing[issue.ID] = "plan-review"
+	m.processingLock.Unlock()
+
+	// Load current plan
+	plan, _ := m.storage.LoadPlan(issue.ID)
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
+
+	prompt := claude.BuildPlanReviewPrompt(plan, feedback)
+
+	m.statusMsg = fmt.Sprintf("Reviewing plan %s...", issue.ID)
+	m.claude.RunAsync(issue.ID, "plan-review", prompt, "", sessionID, m.resultChan)
 
 	return m, nil
 }

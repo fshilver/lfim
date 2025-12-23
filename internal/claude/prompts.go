@@ -97,6 +97,30 @@ Start immediately with the first section header.
 Do NOT wrap output in code blocks.`, readOnlyConstraints, currentAnalysis, feedback)
 }
 
+// BuildPlanReviewPrompt builds the plan review/refinement prompt
+func BuildPlanReviewPrompt(currentPlan, feedback string) string {
+	return fmt.Sprintf(`%s## Context
+You previously provided the following implementation plan:
+
+---
+%s
+---
+
+## User Feedback
+The user has reviewed your plan and provided the following feedback:
+
+%s
+
+## Task
+Please revise your implementation plan based on this feedback. Maintain the same structure
+but address the specific concerns or suggestions raised.
+
+## Output Format
+Return the complete revised plan as markdown.
+Start immediately with the first section header.
+Do NOT wrap output in code blocks.`, readOnlyConstraints, currentPlan, feedback)
+}
+
 // BuildCommitMessagePrompt builds the commit message prompt
 func BuildCommitMessagePrompt(issueID, content string) string {
 	return fmt.Sprintf(`Generate a git commit message for closing issue %s.
