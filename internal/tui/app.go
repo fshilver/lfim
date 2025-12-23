@@ -111,8 +111,8 @@ type Model struct {
 	reviewAnalysis string
 
 	// Commit state
-	pendingCommitMsg   string
-	pendingCloseIssue  *model.Issue
+	pendingCommitMsg  string
+	pendingCloseIssue *model.Issue
 }
 
 // New creates a new TUI model
@@ -492,7 +492,8 @@ func (m *Model) handleResult(result claude.TaskResult) {
 	delete(m.processing, result.IssueID)
 	m.processingLock.Unlock()
 
-	if result.TaskType == "analyze" {
+	switch result.TaskType {
+	case "analyze":
 		if result.Success {
 			_ = m.storage.SaveAnalysis(result.IssueID, result.Result)
 			if result.SessionID != "" {
@@ -503,7 +504,7 @@ func (m *Model) handleResult(result claude.TaskResult) {
 		} else {
 			m.statusMsg = fmt.Sprintf("Analyze %s failed", result.IssueID)
 		}
-	} else if result.TaskType == "plan" {
+	case "plan":
 		if result.Success {
 			_ = m.storage.SavePlan(result.IssueID, result.Result)
 			_ = m.storage.UpdateIssueStatus(result.IssueID, model.StatusPlanned, "")
@@ -511,7 +512,7 @@ func (m *Model) handleResult(result claude.TaskResult) {
 		} else {
 			m.statusMsg = fmt.Sprintf("Plan %s failed", result.IssueID)
 		}
-	} else if result.TaskType == "review" {
+	case "review":
 		if result.Success {
 			_ = m.storage.SaveAnalysis(result.IssueID, result.Result)
 			if result.SessionID != "" {
@@ -521,7 +522,7 @@ func (m *Model) handleResult(result claude.TaskResult) {
 		} else {
 			m.statusMsg = fmt.Sprintf("Review %s failed", result.IssueID)
 		}
-	} else if result.TaskType == "commit" {
+	case "commit":
 		if result.Success {
 			m.pendingCommitMsg = strings.TrimSpace(result.Result)
 			m.state = StateCommitConfirm
