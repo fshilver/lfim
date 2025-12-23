@@ -86,7 +86,7 @@ type Model struct {
 
 	// Processing state
 	processing     map[string]string // issueID -> taskType
-	processingLock sync.Mutex
+	processingLock *sync.Mutex
 	spinnerFrame   int
 
 	// Async results channel
@@ -127,15 +127,16 @@ func New(projectPath string) Model {
 	vp := viewport.New(40, 20)
 
 	return Model{
-		storage:    s,
-		claude:     claude.New(projectPath),
-		keys:       DefaultKeyMap(),
-		styles:     DefaultStyles(),
-		processing: make(map[string]string),
-		resultChan: make(chan claude.TaskResult, 10),
-		textInput:  ti,
-		viewport:   vp,
-		filterMode: FilterActive,
+		storage:        s,
+		claude:         claude.New(projectPath),
+		keys:           DefaultKeyMap(),
+		styles:         DefaultStyles(),
+		processing:     make(map[string]string),
+		processingLock: &sync.Mutex{},
+		resultChan:     make(chan claude.TaskResult, 10),
+		textInput:      ti,
+		viewport:       vp,
+		filterMode:     FilterActive,
 	}
 }
 
