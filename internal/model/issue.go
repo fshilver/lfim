@@ -34,6 +34,20 @@ const (
 	TypeRefactor IssueType = "refactor"
 )
 
+// Icon returns the display emoji for this issue type
+func (t IssueType) Icon() string {
+	switch t {
+	case TypeFeature:
+		return "💡"
+	case TypeBug:
+		return "💥"
+	case TypeRefactor:
+		return "🔧"
+	default:
+		return "❓"
+	}
+}
+
 // Issue represents a single issue
 type Issue struct {
 	ID            string      `yaml:"id"`

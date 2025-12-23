@@ -50,6 +50,8 @@ const (
 	StateConfirm
 	StateTypeSelect
 	StateReviewPreview
+	StateCommitConfirm
+	StateCommitGenerating
 )
 
 // InputMode represents what input is being collected
@@ -107,6 +109,10 @@ type Model struct {
 
 	// Review state
 	reviewAnalysis string
+
+	// Commit state
+	pendingCommitMsg   string
+	pendingCloseIssue  *model.Issue
 }
 
 // New creates a new TUI model
@@ -242,6 +248,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTypeSelectKey(msg)
 	case StateReviewPreview:
 		return m.handleReviewPreviewKey(msg)
+	case StateCommitConfirm:
+		return m.handleCommitConfirmKey(msg)
+	case StateCommitGenerating:
+		// Ignore key input while generating
+		return m, nil
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -426,6 +437,55 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleCommitConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	// Scroll keys
+	case "up", "k":
+		m.viewport.LineUp(1)
+		return m, nil
+	case "down", "j":
+		m.viewport.LineDown(1)
+		return m, nil
+
+	// Accept commit
+	case "y", "enter":
+		if m.pendingCloseIssue == nil {
+			m.state = StateNormal
+			m.statusMsg = "No pending issue"
+			return m, nil
+		}
+
+		issue := m.pendingCloseIssue
+		_ = m.storage.UpdateIssueStatus(issue.ID, model.StatusClosed, "")
+
+		if m.storage.HasStagedChanges() {
+			success, _ := m.storage.GitCommit(m.pendingCommitMsg)
+			if success {
+				m.statusMsg = fmt.Sprintf("Closed & committed %s", issue.ID)
+			} else {
+				m.statusMsg = fmt.Sprintf("Closed %s (commit failed)", issue.ID)
+			}
+		} else {
+			m.statusMsg = fmt.Sprintf("Closed %s (no changes to commit)", issue.ID)
+		}
+
+		m.state = StateNormal
+		m.pendingCloseIssue = nil
+		m.pendingCommitMsg = ""
+		return m, m.refreshIssues()
+
+	// Cancel
+	case "n", "esc":
+		m.state = StateNormal
+		m.pendingCloseIssue = nil
+		m.pendingCommitMsg = ""
+		m.statusMsg = "Cancelled"
+		return m, nil
+	}
+
+	return m, nil
+}
+
 func (m *Model) handleResult(result claude.TaskResult) {
 	m.processingLock.Lock()
 	delete(m.processing, result.IssueID)
@@ -459,6 +519,16 @@ func (m *Model) handleResult(result claude.TaskResult) {
 			m.statusMsg = fmt.Sprintf("Reviewed %s", result.IssueID)
 		} else {
 			m.statusMsg = fmt.Sprintf("Review %s failed", result.IssueID)
+		}
+	} else if result.TaskType == "commit" {
+		if result.Success {
+			m.pendingCommitMsg = strings.TrimSpace(result.Result)
+			m.state = StateCommitConfirm
+			m.statusMsg = "Review commit message"
+		} else {
+			m.state = StateNormal
+			m.pendingCloseIssue = nil
+			m.statusMsg = fmt.Sprintf("Commit message generation failed: %s", result.IssueID)
 		}
 	}
 }
@@ -513,6 +583,10 @@ func (m Model) View() string {
 		overlay = m.renderTypeSelectOverlay()
 	case StateReviewPreview:
 		overlay = m.renderReviewPreviewOverlay()
+	case StateCommitConfirm:
+		overlay = m.renderCommitConfirmOverlay()
+	case StateCommitGenerating:
+		overlay = m.renderCommitGeneratingOverlay()
 	}
 
 	// Combine vertically
@@ -568,11 +642,12 @@ func (m Model) renderList(width, height int) string {
 			}
 
 			// Format line
-			suffix := fmt.Sprintf(" (%s)", issue.Type)
+			typeIcon := issue.Type.Icon()
+			var suffix string
 			if isProcessing {
 				suffix = fmt.Sprintf(" [%s...]", taskType)
 			}
-			line := fmt.Sprintf("%s [%s] %s%s", icon, issue.ID, issue.Title, suffix)
+			line := fmt.Sprintf("%s %s [%s] %s%s", typeIcon, icon, issue.ID, issue.Title, suffix)
 
 			// Truncate using display width (handles wide chars like Korean)
 			if runewidth.StringWidth(line) > width {
@@ -723,6 +798,65 @@ func (m Model) renderReviewPreviewOverlay() string {
 	)
 }
 
+func (m Model) renderCommitConfirmOverlay() string {
+	// Calculate width based on terminal size
+	popupWidth := m.width - 10
+	if popupWidth < 60 {
+		popupWidth = 60
+	}
+	if popupWidth > 100 {
+		popupWidth = 100
+	}
+
+	// Setup viewport for commit message if not already set
+	viewportHeight := m.height - 10
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+	if viewportHeight > 20 {
+		viewportHeight = 20
+	}
+
+	// Wrap commit message for display
+	wrapped := wrapText(m.pendingCommitMsg, popupWidth-6)
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) > viewportHeight {
+		lines = lines[:viewportHeight]
+	}
+	displayMsg := strings.Join(lines, "\n")
+
+	issueInfo := ""
+	if m.pendingCloseIssue != nil {
+		issueInfo = fmt.Sprintf(" [%s] %s", m.pendingCloseIssue.ID, m.pendingCloseIssue.Title)
+	}
+
+	helpText := "[y]es/Enter: commit   [n]/Esc: cancel   ↑↓ scroll"
+
+	return m.styles.PopupBorder.Width(popupWidth).Render(
+		fmt.Sprintf("%s\n%s\n\n%s\n\n%s",
+			m.styles.PopupTitle.Render("Commit Message:"+issueInfo),
+			strings.Repeat("─", popupWidth-6),
+			displayMsg,
+			helpText,
+		),
+	)
+}
+
+func (m Model) renderCommitGeneratingOverlay() string {
+	spinner := SpinnerFrames[m.spinnerFrame]
+	issueInfo := ""
+	if m.pendingCloseIssue != nil {
+		issueInfo = fmt.Sprintf(" [%s]", m.pendingCloseIssue.ID)
+	}
+
+	return m.styles.PopupBorder.Render(
+		fmt.Sprintf("%s\n\n%s Generating commit message with Haiku...",
+			m.styles.PopupTitle.Render("Closing Issue"+issueInfo),
+			spinner,
+		),
+	)
+}
+
 // Actions
 
 func (m Model) startNewIssue() (Model, tea.Cmd) {
@@ -801,12 +935,35 @@ func (m Model) confirmClose() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.state = StateConfirm
-	m.confirmMsg = fmt.Sprintf("Close issue %s?", issue.ID)
-	m.confirmAction = func() {
-		_ = m.storage.UpdateIssueStatus(issue.ID, model.StatusClosed, "")
-		m.statusMsg = fmt.Sprintf("Closed %s", issue.ID)
+	// Check if plan exists
+	if !m.storage.PlanExists(issue.ID) {
+		m.statusMsg = "Plan first (press 'p')"
+		return m, nil
 	}
+
+	// Check if git repo
+	if !m.storage.IsGitRepo() {
+		m.statusMsg = "Not a git repository"
+		return m, nil
+	}
+
+	// Check if there are staged changes
+	if !m.storage.HasStagedChanges() {
+		m.statusMsg = "No staged changes. Run 'git add' first"
+		return m, nil
+	}
+
+	// Git repo with staged changes: generate commit message with Haiku
+	m.pendingCloseIssue = issue
+	m.state = StateCommitGenerating
+	m.statusMsg = fmt.Sprintf("Generating commit message for %s...", issue.ID)
+
+	// Load plan.md for context
+	plan, _ := m.storage.LoadPlan(issue.ID)
+
+	prompt := claude.BuildCommitMessagePrompt(issue.ID, plan)
+	m.claude.RunAsync(issue.ID, "commit", prompt, "haiku", "", m.resultChan)
+
 	return m, nil
 }
 
