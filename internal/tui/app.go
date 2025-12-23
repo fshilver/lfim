@@ -874,8 +874,23 @@ func (m Model) createIssue(issueType model.IssueType) (Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("Error: %v", err)
 		return m, nil
 	}
-	m.statusMsg = fmt.Sprintf("Created %s", issue.ID)
-	return m, m.refreshIssues()
+	m.statusMsg = fmt.Sprintf("Created %s - opening editor", issue.ID)
+
+	// Open editor for the new issue's brief.md
+	briefPath := m.storage.BriefPath(issue.ID)
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	cmd := exec.Command(editor, briefPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return refreshRequestMsg{}
+	})
 }
 
 func (m Model) editIssue() (Model, tea.Cmd) {
