@@ -49,6 +49,7 @@ const (
 	StateInput
 	StateConfirm
 	StateTypeSelect
+	StateReviewPreview
 )
 
 // InputMode represents what input is being collected
@@ -57,6 +58,7 @@ type InputMode int
 const (
 	InputNone InputMode = iota
 	InputNewIssue
+	InputReview
 )
 
 // Model is the main Bubble Tea model
@@ -102,6 +104,9 @@ type Model struct {
 
 	// Type select state
 	pendingTitle string
+
+	// Review state
+	reviewAnalysis string
 }
 
 // New creates a new TUI model
@@ -235,6 +240,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case StateTypeSelect:
 		return m.handleTypeSelectKey(msg)
+	case StateReviewPreview:
+		return m.handleReviewPreviewKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -275,6 +282,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Plan):
 		return m.planIssue()
 
+	case key.Matches(msg, m.keys.Review):
+		return m.reviewIssue()
+
 	case key.Matches(msg, m.keys.Refresh):
 		m.statusMsg = "Refreshed"
 		return m, m.refreshIssues()
@@ -306,12 +316,30 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = StateTypeSelect
 			m.inputMode = InputNone
 			return m, nil
+		case InputReview:
+			if value == "" {
+				// Go back to review preview
+				m.state = StateReviewPreview
+				m.inputMode = InputNone
+				return m, nil
+			}
+			m.state = StateNormal
+			m.inputMode = InputNone
+			m.reviewAnalysis = ""
+			return m.executeReview(value)
 		default:
 			m.state = StateNormal
 			return m, nil
 		}
 
 	case tea.KeyEsc:
+		if m.inputMode == InputReview {
+			// Go back to review preview
+			m.state = StateReviewPreview
+			m.inputMode = InputNone
+			m.textInput.Reset()
+			return m, nil
+		}
 		m.state = StateNormal
 		m.inputMode = InputNone
 		m.textInput.Reset()
@@ -357,6 +385,47 @@ func (m Model) handleTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	// Scroll keys
+	case "up", "k":
+		m.viewport.LineUp(1)
+		return m, nil
+	case "down", "j":
+		m.viewport.LineDown(1)
+		return m, nil
+	case "pgup", "ctrl+u":
+		m.viewport.HalfViewUp()
+		return m, nil
+	case "pgdown", "ctrl+d":
+		m.viewport.HalfViewDown()
+		return m, nil
+	case "home", "g":
+		m.viewport.GotoTop()
+		return m, nil
+	case "end", "G":
+		m.viewport.GotoBottom()
+		return m, nil
+
+	// Action keys
+	case "e":
+		return m.editAnalysis()
+	case "f":
+		// Switch to feedback input mode
+		m.state = StateInput
+		m.inputMode = InputReview
+		m.inputPrompt = "Feedback: "
+		m.textInput.Focus()
+		return m, textinput.Blink
+	case "c", "esc":
+		m.state = StateNormal
+		m.reviewAnalysis = ""
+		return m, nil
+	}
+
+	return m, nil
+}
+
 func (m *Model) handleResult(result claude.TaskResult) {
 	m.processingLock.Lock()
 	delete(m.processing, result.IssueID)
@@ -380,6 +449,16 @@ func (m *Model) handleResult(result claude.TaskResult) {
 			m.statusMsg = fmt.Sprintf("Planned %s", result.IssueID)
 		} else {
 			m.statusMsg = fmt.Sprintf("Plan %s failed", result.IssueID)
+		}
+	} else if result.TaskType == "review" {
+		if result.Success {
+			_ = m.storage.SaveAnalysis(result.IssueID, result.Result)
+			if result.SessionID != "" {
+				_ = m.storage.SaveSessionID(result.IssueID, result.SessionID)
+			}
+			m.statusMsg = fmt.Sprintf("Reviewed %s", result.IssueID)
+		} else {
+			m.statusMsg = fmt.Sprintf("Review %s failed", result.IssueID)
 		}
 	}
 }
@@ -432,6 +511,8 @@ func (m Model) View() string {
 		overlay = m.renderConfirmOverlay()
 	case StateTypeSelect:
 		overlay = m.renderTypeSelectOverlay()
+	case StateReviewPreview:
+		overlay = m.renderReviewPreviewOverlay()
 	}
 
 	// Combine vertically
@@ -564,6 +645,32 @@ func (m Model) renderPreview(width, height int) string {
 }
 
 func (m Model) renderInputOverlay() string {
+	if m.inputMode == InputReview && m.reviewAnalysis != "" {
+		// Calculate width based on terminal size
+		popupWidth := m.width - 10
+		if popupWidth < 60 {
+			popupWidth = 60
+		}
+		if popupWidth > 100 {
+			popupWidth = 100
+		}
+
+		// Scroll indicator
+		scrollPercent := m.viewport.ScrollPercent() * 100
+		scrollInfo := fmt.Sprintf(" %3.0f%% ", scrollPercent)
+
+		return m.styles.PopupBorder.Width(popupWidth).Render(
+			fmt.Sprintf("%s\n%s\n%s%s\n%s\n%s",
+				m.styles.PopupTitle.Render("Current Analysis:"),
+				m.viewport.View(),
+				strings.Repeat("─", popupWidth-10),
+				scrollInfo,
+				m.styles.InputPrompt.Render(m.inputPrompt),
+				m.textInput.View(),
+			),
+		)
+	}
+
 	return m.styles.PopupBorder.Render(
 		fmt.Sprintf("%s\n%s",
 			m.styles.InputPrompt.Render(m.inputPrompt),
@@ -584,6 +691,34 @@ func (m Model) renderTypeSelectOverlay() string {
 	return m.styles.PopupBorder.Render(
 		fmt.Sprintf("%s\n\n[f]eature  [b]ug  [r]efactor\n\n[esc] cancel",
 			m.styles.PopupTitle.Render("Select issue type:"),
+		),
+	)
+}
+
+func (m Model) renderReviewPreviewOverlay() string {
+	// Calculate width based on terminal size
+	popupWidth := m.width - 10
+	if popupWidth < 60 {
+		popupWidth = 60
+	}
+	if popupWidth > 100 {
+		popupWidth = 100
+	}
+
+	// Scroll indicator
+	scrollPercent := m.viewport.ScrollPercent() * 100
+	scrollInfo := fmt.Sprintf(" %3.0f%% ", scrollPercent)
+
+	// Help text for actions
+	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll"
+
+	return m.styles.PopupBorder.Width(popupWidth).Render(
+		fmt.Sprintf("%s\n%s\n%s%s\n\n%s",
+			m.styles.PopupTitle.Render("Review Analysis:"),
+			m.viewport.View(),
+			strings.Repeat("─", popupWidth-10),
+			scrollInfo,
+			helpText,
 		),
 	)
 }
@@ -629,6 +764,33 @@ func (m Model) editIssue() (Model, tea.Cmd) {
 
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return refreshRequestMsg{} // Trigger refresh after editor closes
+	})
+}
+
+func (m Model) editAnalysis() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	analysisPath := m.storage.AnalysisPath(issue.ID)
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	// Reset review state before opening editor
+	m.state = StateNormal
+	m.reviewAnalysis = ""
+
+	cmd := exec.Command(editor, analysisPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return refreshRequestMsg{}
 	})
 }
 
@@ -726,6 +888,84 @@ func (m Model) planIssue() (Model, tea.Cmd) {
 
 	m.statusMsg = fmt.Sprintf("Planning %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
+
+	return m, nil
+}
+
+func (m Model) reviewIssue() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	if !m.storage.AnalysisExists(issue.ID) {
+		m.statusMsg = "Analyze first"
+		return m, nil
+	}
+
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processingLock.Unlock()
+
+	// Load analysis for preview
+	analysis, err := m.storage.LoadAnalysis(issue.ID)
+	if err != nil {
+		m.statusMsg = "Failed to load analysis"
+		return m, nil
+	}
+	m.reviewAnalysis = analysis
+
+	// Setup viewport for scrollable analysis
+	viewportHeight := m.height - 10
+	if viewportHeight < 10 {
+		viewportHeight = 10
+	}
+	viewportWidth := m.width - 14
+	if viewportWidth < 50 {
+		viewportWidth = 50
+	}
+	if viewportWidth > 96 {
+		viewportWidth = 96
+	}
+	m.viewport.Width = viewportWidth
+	m.viewport.Height = viewportHeight
+	m.viewport.SetContent(analysis)
+	m.viewport.GotoTop()
+
+	// Enter review preview mode
+	m.state = StateReviewPreview
+	return m, nil
+}
+
+func (m Model) executeReview(feedback string) (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processing[issue.ID] = "review"
+	m.processingLock.Unlock()
+
+	// Load current analysis
+	analysis, _ := m.storage.LoadAnalysis(issue.ID)
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
+
+	prompt := claude.BuildReviewPrompt(analysis, feedback)
+
+	m.statusMsg = fmt.Sprintf("Reviewing %s...", issue.ID)
+	m.claude.RunAsync(issue.ID, "review", prompt, "", sessionID, m.resultChan)
 
 	return m, nil
 }
