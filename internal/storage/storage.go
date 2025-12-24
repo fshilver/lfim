@@ -224,6 +224,47 @@ func (s *Storage) UpdateIssueStatus(issueID string, status model.IssueStatus, re
 	return nil
 }
 
+// SyncBriefToIndex syncs title and type from brief.md to index.yaml
+func (s *Storage) SyncBriefToIndex(issueID string) error {
+	// Load brief.md to get current frontmatter values
+	brief, err := s.LoadBrief(issueID)
+	if err != nil {
+		return err
+	}
+	if brief == nil {
+		return nil // Brief doesn't exist, nothing to sync
+	}
+
+	// Load current index
+	idx, err := s.LoadIndex()
+	if err != nil {
+		return err
+	}
+
+	// Find and update the issue entry
+	if idxIssue := idx.GetIssue(issueID); idxIssue != nil {
+		// Only update if values differ
+		changed := false
+		if idxIssue.Title != brief.Title {
+			idxIssue.Title = brief.Title
+			changed = true
+		}
+		if idxIssue.Type != brief.Type {
+			idxIssue.Type = brief.Type
+			changed = true
+		}
+
+		if changed {
+			idx.UpdateIssue(idxIssue)
+			if err := s.SaveIndex(idx); err != nil {
+				return err
+			}
+			s.gitAdd(s.IndexPath())
+		}
+	}
+	return nil
+}
+
 // AnalysisExists checks if analysis.md exists for an issue
 func (s *Storage) AnalysisExists(issueID string) bool {
 	_, err := os.Stat(s.AnalysisPath(issueID))

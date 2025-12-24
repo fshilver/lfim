@@ -190,6 +190,11 @@ type issuesLoadedMsg []*model.Issue
 // Request to refresh issues (triggers refreshIssues command)
 type refreshRequestMsg struct{}
 
+// syncAfterEditMsg triggers brief-to-index sync after editor closes
+type syncAfterEditMsg struct {
+	issueID string
+}
+
 func (m Model) refreshIssues() tea.Cmd {
 	return func() tea.Msg {
 		idx, err := m.storage.LoadIndex()
@@ -272,6 +277,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.refreshIssues())
 
 	case refreshRequestMsg:
+		return m, m.refreshIssues()
+
+	case syncAfterEditMsg:
+		// Sync brief.md changes to index.yaml
+		_ = m.storage.SyncBriefToIndex(msg.issueID)
 		return m, m.refreshIssues()
 	}
 
@@ -1342,7 +1352,7 @@ func (m Model) createIssue(issueType model.IssueType) (Model, tea.Cmd) {
 	cmd.Stderr = os.Stderr
 
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return refreshRequestMsg{}
+		return syncAfterEditMsg{issueID: issue.ID}
 	})
 }
 
@@ -1365,7 +1375,7 @@ func (m Model) editIssue() (Model, tea.Cmd) {
 	cmd.Stderr = os.Stderr
 
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return refreshRequestMsg{} // Trigger refresh after editor closes
+		return syncAfterEditMsg{issueID: issue.ID}
 	})
 }
 
