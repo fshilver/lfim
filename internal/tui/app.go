@@ -124,6 +124,11 @@ type Model struct {
 	// Retry confirmation state
 	pendingRetryIssue *model.Issue
 	pendingImplement  bool
+
+	// List scroll state
+	listVOffset      int // vertical scroll offset for issue list
+	listHOffset      int // horizontal scroll offset for issue list
+	listMaxLineWidth int // max line width in issue list
 }
 
 // New creates a new TUI model
@@ -225,6 +230,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.viewport.Width = msg.Width / 2
 		m.viewport.Height = msg.Height - 4
+		// Validate scroll offsets after resize
+		listVisibleHeight := m.height - 3
+		if listVisibleHeight < 1 {
+			listVisibleHeight = 1
+		}
+		m.ensureSelectedVisible(listVisibleHeight)
+		// Validate horizontal scroll offset
+		listWidth := m.width/2 - 2
+		maxHOffset := m.listMaxLineWidth - listWidth
+		if maxHOffset < 0 {
+			maxHOffset = 0
+		}
+		if m.listHOffset > maxHOffset {
+			m.listHOffset = maxHOffset
+		}
 		return m, nil
 
 	case tickMsg:
@@ -236,6 +256,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selected >= len(m.issues) {
 			m.selected = max(0, len(m.issues)-1)
 		}
+		// Validate vertical scroll offset
+		listVisibleHeight := m.height - 3
+		if listVisibleHeight < 1 {
+			listVisibleHeight = 1
+		}
+		m.ensureSelectedVisible(listVisibleHeight)
+		// Calculate max line width for horizontal scrolling
+		m.calculateListMaxLineWidth()
 		return m, nil
 
 	case resultMsg:
@@ -273,6 +301,15 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Calculate visible height for list (same as in View)
+	listVisibleHeight := m.height - 3
+	if listVisibleHeight < 1 {
+		listVisibleHeight = 1
+	}
+
+	// Horizontal scroll step size
+	const hScrollStep = 5
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -280,12 +317,14 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		if m.selected > 0 {
 			m.selected--
+			m.ensureSelectedVisible(listVisibleHeight)
 		}
 		return m, nil
 
 	case key.Matches(msg, m.keys.Down):
 		if m.selected < len(m.issues)-1 {
 			m.selected++
+			m.ensureSelectedVisible(listVisibleHeight)
 		}
 		return m, nil
 
@@ -322,8 +361,35 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Filter):
 		m.filterMode = (m.filterMode + 1) % 3
+		m.listVOffset = 0 // Reset vertical scroll on filter change
+		m.listHOffset = 0 // Reset horizontal scroll on filter change
 		m.statusMsg = fmt.Sprintf("Filter: %s", m.filterMode)
 		return m, m.refreshIssues()
+	}
+
+	// Handle horizontal scroll with left/right arrow keys
+	listWidth := m.width/2 - 2
+	switch msg.String() {
+	case "left":
+		if m.listHOffset > 0 {
+			m.listHOffset -= hScrollStep
+			if m.listHOffset < 0 {
+				m.listHOffset = 0
+			}
+		}
+		return m, nil
+	case "right":
+		maxOffset := m.listMaxLineWidth - listWidth
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		if m.listHOffset < maxOffset {
+			m.listHOffset += hScrollStep
+			if m.listHOffset > maxOffset {
+				m.listHOffset = maxOffset
+			}
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -718,10 +784,18 @@ func (m Model) View() string {
 		contentHeight = 1
 	}
 
-	// Render header
-	header := m.styles.Header.Render(
-		fmt.Sprintf("Issue Manager [%s]", m.filterMode),
-	)
+	// Render header with scroll indicator
+	headerText := fmt.Sprintf("Issue Manager [%s]", m.filterMode)
+	// Add scroll indicator if there are more issues than visible
+	if len(m.issues) > contentHeight {
+		scrollInfo := fmt.Sprintf(" (%d-%d/%d)", m.listVOffset+1, min(m.listVOffset+contentHeight, len(m.issues)), len(m.issues))
+		headerText += scrollInfo
+	}
+	// Add horizontal scroll indicator if scrolled
+	if m.listHOffset > 0 {
+		headerText += fmt.Sprintf(" H:%d", m.listHOffset)
+	}
+	header := m.styles.Header.Render(headerText)
 
 	// Render list panel
 	listContent := m.renderList(listWidth-2, contentHeight)
@@ -739,7 +813,7 @@ func (m Model) View() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, previewPanel)
 
 	// Render footer
-	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [i]mplement [c]lose [d]iscard [e]dit [f]ilter [q]uit"
+	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [i]mplement [c]lose [d]iscard [e]dit [f]ilter [q]uit ←→scroll"
 	footer := m.styles.Footer.Render(keys)
 	status := m.styles.StatusBar.Render(m.statusMsg)
 
@@ -925,10 +999,15 @@ func (m Model) renderList(width, height int) string {
 	if len(m.issues) == 0 {
 		lines = append(lines, fmt.Sprintf("No %s issues", m.filterMode))
 	} else {
-		for i, issue := range m.issues {
-			if i >= height {
-				break
-			}
+		// Calculate the visible range based on vertical scroll offset
+		startIdx := m.listVOffset
+		endIdx := m.listVOffset + height
+		if endIdx > len(m.issues) {
+			endIdx = len(m.issues)
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			issue := m.issues[i]
 
 			// Get icon
 			var icon string
@@ -949,6 +1028,11 @@ func (m Model) renderList(width, height int) string {
 				suffix = fmt.Sprintf(" [%s...]", taskType)
 			}
 			line := fmt.Sprintf("%s %s [%s] %s%s", typeIcon, icon, issue.ID, issue.Title, suffix)
+
+			// Apply horizontal scroll offset
+			if m.listHOffset > 0 {
+				line = applyHorizontalOffsetToLine(line, m.listHOffset)
+			}
 
 			// Truncate using display width (handles wide chars like Korean)
 			if runewidth.StringWidth(line) > width {
@@ -1865,4 +1949,93 @@ func applyHorizontalOffset(content string, offset int, width int) string {
 	}
 
 	return strings.Join(result, "\n")
+}
+
+// applyHorizontalOffsetToLine applies horizontal scroll offset to a single line
+func applyHorizontalOffsetToLine(line string, offset int) string {
+	lineWidth := runewidth.StringWidth(line)
+
+	// If offset is beyond the line, return empty string
+	if offset >= lineWidth {
+		return ""
+	}
+
+	// Skip characters until we reach the offset
+	currentWidth := 0
+	startIdx := 0
+	for _, r := range line {
+		charWidth := runewidth.RuneWidth(r)
+		if currentWidth+charWidth > offset {
+			break
+		}
+		currentWidth += charWidth
+		startIdx += len(string(r))
+	}
+
+	// Get the substring from offset position
+	remaining := line[startIdx:]
+
+	// If we stopped in the middle of a wide character, add a space
+	if currentWidth < offset {
+		remaining = " " + remaining
+	}
+
+	return remaining
+}
+
+// ensureSelectedVisible adjusts listVOffset so that the selected item is visible
+func (m *Model) ensureSelectedVisible(visibleHeight int) {
+	if len(m.issues) == 0 || visibleHeight <= 0 {
+		return
+	}
+
+	// Clamp selected to valid range
+	if m.selected < 0 {
+		m.selected = 0
+	}
+	if m.selected >= len(m.issues) {
+		m.selected = len(m.issues) - 1
+	}
+
+	// If selected is above the visible area, scroll up
+	if m.selected < m.listVOffset {
+		m.listVOffset = m.selected
+	}
+
+	// If selected is below the visible area, scroll down
+	if m.selected >= m.listVOffset+visibleHeight {
+		m.listVOffset = m.selected - visibleHeight + 1
+	}
+
+	// Clamp listVOffset to valid range
+	maxOffset := len(m.issues) - visibleHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.listVOffset > maxOffset {
+		m.listVOffset = maxOffset
+	}
+	if m.listVOffset < 0 {
+		m.listVOffset = 0
+	}
+}
+
+// calculateListMaxLineWidth calculates the maximum line width for issue list items
+func (m *Model) calculateListMaxLineWidth() {
+	m.listMaxLineWidth = 0
+	for _, issue := range m.issues {
+		m.processingLock.Lock()
+		taskType, isProcessing := m.processing[issue.ID]
+		m.processingLock.Unlock()
+
+		var suffix string
+		if isProcessing {
+			suffix = fmt.Sprintf(" [%s...]", taskType)
+		}
+		line := fmt.Sprintf("%s %s [%s] %s%s", issue.Type.Icon(), issue.StatusIcon(), issue.ID, issue.Title, suffix)
+		w := runewidth.StringWidth(line)
+		if w > m.listMaxLineWidth {
+			m.listMaxLineWidth = w
+		}
+	}
 }
