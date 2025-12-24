@@ -113,6 +113,10 @@ type Model struct {
 	reviewAnalysis string
 	reviewPlan     string
 
+	// Horizontal scroll state
+	hOffset      int // horizontal scroll offset
+	maxLineWidth int // max line width in current content
+
 	// Commit state
 	pendingCommitMsg  string
 	pendingCloseIssue *model.Issue
@@ -427,8 +431,11 @@ func (m Model) handleTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Horizontal scroll step size
+	const hScrollStep = 10
+
 	switch msg.String() {
-	// Scroll keys
+	// Vertical scroll keys
 	case "up", "k":
 		m.viewport.LineUp(1)
 		return m, nil
@@ -446,6 +453,36 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "end", "G":
 		m.viewport.GotoBottom()
+		return m, nil
+
+	// Horizontal scroll keys
+	case "left", "h":
+		if m.hOffset > 0 {
+			m.hOffset -= hScrollStep
+			if m.hOffset < 0 {
+				m.hOffset = 0
+			}
+			// Update viewport content with new offset
+			yOffset := m.viewport.YOffset
+			m.viewport.SetContent(applyHorizontalOffset(m.reviewAnalysis, m.hOffset, m.viewport.Width))
+			m.viewport.SetYOffset(yOffset)
+		}
+		return m, nil
+	case "right", "l":
+		maxOffset := m.maxLineWidth - m.viewport.Width
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		if m.hOffset < maxOffset {
+			m.hOffset += hScrollStep
+			if m.hOffset > maxOffset {
+				m.hOffset = maxOffset
+			}
+			// Update viewport content with new offset
+			yOffset := m.viewport.YOffset
+			m.viewport.SetContent(applyHorizontalOffset(m.reviewAnalysis, m.hOffset, m.viewport.Width))
+			m.viewport.SetYOffset(yOffset)
+		}
 		return m, nil
 
 	// Action keys
@@ -461,6 +498,7 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c", "esc":
 		m.state = StateNormal
 		m.reviewAnalysis = ""
+		m.hOffset = 0
 		return m, nil
 	}
 
@@ -468,8 +506,11 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePlanPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Horizontal scroll step size
+	const hScrollStep = 10
+
 	switch msg.String() {
-	// Scroll keys
+	// Vertical scroll keys
 	case "up", "k":
 		m.viewport.LineUp(1)
 		return m, nil
@@ -489,6 +530,36 @@ func (m Model) handlePlanPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 		return m, nil
 
+	// Horizontal scroll keys
+	case "left", "h":
+		if m.hOffset > 0 {
+			m.hOffset -= hScrollStep
+			if m.hOffset < 0 {
+				m.hOffset = 0
+			}
+			// Update viewport content with new offset
+			yOffset := m.viewport.YOffset
+			m.viewport.SetContent(applyHorizontalOffset(m.reviewPlan, m.hOffset, m.viewport.Width))
+			m.viewport.SetYOffset(yOffset)
+		}
+		return m, nil
+	case "right", "l":
+		maxOffset := m.maxLineWidth - m.viewport.Width
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		if m.hOffset < maxOffset {
+			m.hOffset += hScrollStep
+			if m.hOffset > maxOffset {
+				m.hOffset = maxOffset
+			}
+			// Update viewport content with new offset
+			yOffset := m.viewport.YOffset
+			m.viewport.SetContent(applyHorizontalOffset(m.reviewPlan, m.hOffset, m.viewport.Width))
+			m.viewport.SetYOffset(yOffset)
+		}
+		return m, nil
+
 	// Action keys
 	case "e":
 		return m.editPlan()
@@ -502,6 +573,7 @@ func (m Model) handlePlanPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c", "esc":
 		m.state = StateNormal
 		m.reviewPlan = ""
+		m.hOffset = 0
 		return m, nil
 	}
 
@@ -864,19 +936,26 @@ func (m Model) renderReviewPreviewOverlay() string {
 		popupWidth = 100
 	}
 
-	// Scroll indicator
+	// Scroll indicators
 	scrollPercent := m.viewport.ScrollPercent() * 100
-	scrollInfo := fmt.Sprintf(" %3.0f%% ", scrollPercent)
+	scrollInfo := fmt.Sprintf(" V:%3.0f%% ", scrollPercent)
+
+	// Horizontal scroll indicator
+	hScrollInfo := ""
+	if m.maxLineWidth > m.viewport.Width {
+		hScrollInfo = fmt.Sprintf(" H:%d ", m.hOffset)
+	}
 
 	// Help text for actions
-	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll"
+	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll  ←→/h/l pan"
 
 	return m.styles.PopupBorder.Width(popupWidth).Render(
-		fmt.Sprintf("%s\n%s\n%s%s\n\n%s",
+		fmt.Sprintf("%s\n%s\n%s%s%s\n\n%s",
 			m.styles.PopupTitle.Render("Review Analysis:"),
 			m.viewport.View(),
 			strings.Repeat("─", popupWidth-10),
 			scrollInfo,
+			hScrollInfo,
 			helpText,
 		),
 	)
@@ -892,19 +971,26 @@ func (m Model) renderPlanPreviewOverlay() string {
 		popupWidth = 100
 	}
 
-	// Scroll indicator
+	// Scroll indicators
 	scrollPercent := m.viewport.ScrollPercent() * 100
-	scrollInfo := fmt.Sprintf(" %3.0f%% ", scrollPercent)
+	scrollInfo := fmt.Sprintf(" V:%3.0f%% ", scrollPercent)
+
+	// Horizontal scroll indicator
+	hScrollInfo := ""
+	if m.maxLineWidth > m.viewport.Width {
+		hScrollInfo = fmt.Sprintf(" H:%d ", m.hOffset)
+	}
 
 	// Help text for actions
-	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll"
+	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll  ←→/h/l pan"
 
 	return m.styles.PopupBorder.Width(popupWidth).Render(
-		fmt.Sprintf("%s\n%s\n%s%s\n\n%s",
+		fmt.Sprintf("%s\n%s\n%s%s%s\n\n%s",
 			m.styles.PopupTitle.Render("Review Plan:"),
 			m.viewport.View(),
 			strings.Repeat("─", popupWidth-10),
 			scrollInfo,
+			hScrollInfo,
 			helpText,
 		),
 	)
@@ -1245,6 +1331,10 @@ func (m Model) reviewIssue() (Model, tea.Cmd) {
 	}
 	m.viewport.Width = viewportWidth
 	m.viewport.Height = viewportHeight
+
+	// Initialize horizontal scroll state
+	m.hOffset = 0
+	m.maxLineWidth = calculateMaxLineWidth(analysis)
 	m.viewport.SetContent(analysis)
 	m.viewport.GotoTop()
 
@@ -1295,6 +1385,10 @@ func (m Model) planReviewIssue() (Model, tea.Cmd) {
 	}
 	m.viewport.Width = viewportWidth
 	m.viewport.Height = viewportHeight
+
+	// Initialize horizontal scroll state
+	m.hOffset = 0
+	m.maxLineWidth = calculateMaxLineWidth(plan)
 	m.viewport.SetContent(plan)
 	m.viewport.GotoTop()
 
@@ -1451,4 +1545,67 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// calculateMaxLineWidth returns the maximum display width of any line in the content
+func calculateMaxLineWidth(content string) int {
+	maxWidth := 0
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		w := runewidth.StringWidth(line)
+		if w > maxWidth {
+			maxWidth = w
+		}
+	}
+	return maxWidth
+}
+
+// applyHorizontalOffset applies horizontal scrolling to content
+// It returns content where each line is shifted by offset and truncated to width
+func applyHorizontalOffset(content string, offset int, width int) string {
+	if offset <= 0 && width <= 0 {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	result := make([]string, len(lines))
+
+	for i, line := range lines {
+		lineWidth := runewidth.StringWidth(line)
+
+		// If offset is beyond the line, return empty line
+		if offset >= lineWidth {
+			result[i] = ""
+			continue
+		}
+
+		// Skip characters until we reach the offset
+		currentWidth := 0
+		startIdx := 0
+		for _, r := range line {
+			charWidth := runewidth.RuneWidth(r)
+			if currentWidth+charWidth > offset {
+				break
+			}
+			currentWidth += charWidth
+			startIdx += len(string(r))
+		}
+
+		// Get the substring from offset position
+		remaining := line[startIdx:]
+
+		// If we stopped in the middle of a wide character, add a space
+		if currentWidth < offset {
+			remaining = " " + remaining
+		}
+
+		// Truncate to width
+		if width > 0 {
+			remaining = runewidth.Truncate(remaining, width, "")
+		}
+
+		result[i] = remaining
+	}
+
+	return strings.Join(result, "\n")
 }
