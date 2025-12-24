@@ -305,6 +305,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.PlanReview):
 		return m.planReviewIssue()
 
+	case key.Matches(msg, m.keys.Implement):
+		return m.implementIssue()
+
 	case key.Matches(msg, m.keys.Refresh):
 		m.statusMsg = "Refreshed"
 		return m, m.refreshIssues()
@@ -647,7 +650,7 @@ func (m Model) View() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, previewPanel)
 
 	// Render footer
-	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [c]lose [d]iscard [e]dit [f]ilter [q]uit"
+	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [i]mplement [c]lose [d]iscard [e]dit [f]ilter [q]uit"
 	footer := m.styles.Footer.Render(keys)
 	status := m.styles.StatusBar.Render(m.statusMsg)
 
@@ -1354,6 +1357,50 @@ func (m Model) executePlanReview(feedback string) (Model, tea.Cmd) {
 	m.claude.RunAsync(issue.ID, "plan-review", prompt, "", sessionID, m.resultChan)
 
 	return m, nil
+}
+
+func (m Model) implementIssue() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	// Only planned issues can be implemented
+	if issue.Status != model.StatusPlanned {
+		m.statusMsg = "Only planned issues can be implemented"
+		return m, nil
+	}
+
+	// Check if plan exists
+	if !m.storage.PlanExists(issue.ID) {
+		m.statusMsg = "Plan first (press 'p')"
+		return m, nil
+	}
+
+	// Check if session exists for --resume
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
+	if sessionID == "" {
+		m.statusMsg = "No session found. Re-analyze the issue first"
+		return m, nil
+	}
+
+	// Build prompt with plan path
+	planPath := m.storage.PlanPath(issue.ID)
+	prompt := claude.BuildImplementPrompt(planPath)
+
+	// Run Claude CLI in interactive mode with --resume
+	cmd := exec.Command("claude", "--resume", sessionID, prompt)
+	cmd.Dir = m.claude.WorkingDir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	m.statusMsg = fmt.Sprintf("Implementing %s...", issue.ID)
+
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return refreshRequestMsg{}
+	})
 }
 
 func (m Model) getSelectedIssue() *model.Issue {

@@ -121,6 +121,11 @@ Start immediately with the first section header.
 Do NOT wrap output in code blocks.`, readOnlyConstraints, currentPlan, feedback)
 }
 
+// BuildImplementPrompt builds the implementation prompt for interactive mode
+func BuildImplementPrompt(planPath string) string {
+	return fmt.Sprintf(`Implement the plan in %s.`, planPath)
+}
+
 // BuildCommitMessagePrompt builds the commit message prompt
 func BuildCommitMessagePrompt(issueID, content string) string {
 	return fmt.Sprintf(`Generate a git commit message for closing issue %s.
