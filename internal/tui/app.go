@@ -120,6 +120,10 @@ type Model struct {
 	// Commit state
 	pendingCommitMsg  string
 	pendingCloseIssue *model.Issue
+
+	// Retry confirmation state
+	pendingRetryIssue *model.Issue
+	pendingImplement  bool
 }
 
 // New creates a new TUI model
@@ -401,13 +405,26 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Yes):
 		m.state = StateNormal
+
+		// Handle pending implement (needs to return tea.Cmd for tea.ExecProcess)
+		if m.pendingImplement && m.pendingRetryIssue != nil {
+			issue := m.pendingRetryIssue
+			m.pendingRetryIssue = nil
+			m.pendingImplement = false
+			return m.executeImplementFor(issue)
+		}
+
+		// Handle other confirm actions
 		if m.confirmAction != nil {
 			m.confirmAction()
 		}
+		m.pendingRetryIssue = nil
 		return m, m.refreshIssues()
 
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Escape):
 		m.state = StateNormal
+		m.pendingRetryIssue = nil
+		m.pendingImplement = false
 		m.statusMsg = "Cancelled"
 		return m, nil
 	}
@@ -753,15 +770,6 @@ func (m Model) View() string {
 		status,
 	)
 
-	if overlay != "" {
-		// Center overlay on screen
-		overlayStyle := lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height).
-			Align(lipgloss.Center, lipgloss.Center)
-		return overlayStyle.Render(overlay)
-	}
-
 	// Force exact terminal height to prevent scrolling issues
 	lines := strings.Split(view, "\n")
 	if len(lines) > m.height {
@@ -771,7 +779,104 @@ func (m Model) View() string {
 		lines = append(lines, "")
 	}
 
-	return strings.Join(lines, "\n")
+	view = strings.Join(lines, "\n")
+
+	// Overlay popup on top of background
+	if overlay != "" {
+		view = placeOverlay(m.width, m.height, overlay, view)
+	}
+
+	return view
+}
+
+// placeOverlay places the overlay centered on top of the background
+func placeOverlay(width, height int, overlay, background string) string {
+	overlayWidth := lipgloss.Width(overlay)
+	overlayHeight := lipgloss.Height(overlay)
+
+	x := (width - overlayWidth) / 2
+	y := (height - overlayHeight) / 2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+
+	bgLines := strings.Split(background, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+
+	// Ensure background has enough lines
+	for len(bgLines) < height {
+		bgLines = append(bgLines, strings.Repeat(" ", width))
+	}
+
+	// Place overlay lines onto background
+	for i, overlayLine := range overlayLines {
+		bgY := y + i
+		if bgY >= len(bgLines) {
+			break
+		}
+
+		bgLine := bgLines[bgY]
+		bgRunes := []rune(bgLine)
+
+		// Pad background line if needed
+		for len(bgRunes) < width {
+			bgRunes = append(bgRunes, ' ')
+		}
+
+		// Build new line: before overlay + overlay + after overlay
+		var newLine strings.Builder
+
+		// Part before overlay
+		currentWidth := 0
+		runeIdx := 0
+		for runeIdx < len(bgRunes) && currentWidth < x {
+			r := bgRunes[runeIdx]
+			rw := runewidth.RuneWidth(r)
+			if currentWidth+rw > x {
+				// Partial character, add spaces
+				for currentWidth < x {
+					newLine.WriteRune(' ')
+					currentWidth++
+				}
+				break
+			}
+			newLine.WriteRune(r)
+			currentWidth += rw
+			runeIdx++
+		}
+
+		// Pad to x if needed
+		for currentWidth < x {
+			newLine.WriteRune(' ')
+			currentWidth++
+		}
+
+		// Overlay content
+		newLine.WriteString(overlayLine)
+		currentWidth += runewidth.StringWidth(overlayLine)
+
+		// Part after overlay
+		afterX := x + overlayWidth
+		bgWidth := 0
+		for idx, r := range bgRunes {
+			rw := runewidth.RuneWidth(r)
+			if bgWidth+rw > afterX {
+				// Start copying from here
+				for j := idx; j < len(bgRunes); j++ {
+					newLine.WriteRune(bgRunes[j])
+				}
+				break
+			}
+			bgWidth += rw
+		}
+
+		bgLines[bgY] = newLine.String()
+	}
+
+	return strings.Join(bgLines, "\n")
 }
 
 func (m Model) renderList(width, height int) string {
@@ -1236,10 +1341,50 @@ func (m Model) analyzeIssue() (Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
 		return m, nil
 	}
+	m.processingLock.Unlock()
+
+	// Check if analysis already exists
+	if m.storage.AnalysisExists(issue.ID) {
+		m.state = StateConfirm
+		m.confirmMsg = fmt.Sprintf("analysis.md exists for %s. Re-analyze?", issue.ID)
+		m.pendingRetryIssue = issue
+		m.confirmAction = func() {
+			m.executeAnalyze()
+		}
+		return m, nil
+	}
+
+	return m.executeAnalyzeFor(issue)
+}
+
+func (m *Model) executeAnalyze() {
+	if m.pendingRetryIssue == nil {
+		return
+	}
+	issue := m.pendingRetryIssue
+
+	m.processingLock.Lock()
 	m.processing[issue.ID] = "analyze"
 	m.processingLock.Unlock()
 
-	// Load brief content
+	brief, err := m.storage.LoadBrief(issue.ID)
+	if err != nil || brief == nil {
+		m.statusMsg = "Cannot load brief"
+		return
+	}
+
+	briefPath := m.storage.BriefPath(issue.ID)
+	prompt := claude.BuildAnalysisPrompt(brief.Content, briefPath)
+
+	m.statusMsg = fmt.Sprintf("Analyzing %s...", issue.ID)
+	m.claude.RunAsync(issue.ID, "analyze", prompt, "", "", m.resultChan)
+}
+
+func (m Model) executeAnalyzeFor(issue *model.Issue) (Model, tea.Cmd) {
+	m.processingLock.Lock()
+	m.processing[issue.ID] = "analyze"
+	m.processingLock.Unlock()
+
 	brief, err := m.storage.LoadBrief(issue.ID)
 	if err != nil || brief == nil {
 		m.statusMsg = "Cannot load brief"
@@ -1273,10 +1418,47 @@ func (m Model) planIssue() (Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
 		return m, nil
 	}
+	m.processingLock.Unlock()
+
+	// Check if plan already exists
+	if m.storage.PlanExists(issue.ID) {
+		m.state = StateConfirm
+		m.confirmMsg = fmt.Sprintf("plan.md exists for %s. Re-plan?", issue.ID)
+		m.pendingRetryIssue = issue
+		m.confirmAction = func() {
+			m.executePlan()
+		}
+		return m, nil
+	}
+
+	return m.executePlanFor(issue)
+}
+
+func (m *Model) executePlan() {
+	if m.pendingRetryIssue == nil {
+		return
+	}
+	issue := m.pendingRetryIssue
+
+	m.processingLock.Lock()
 	m.processing[issue.ID] = "plan"
 	m.processingLock.Unlock()
 
-	// Load content
+	brief, _ := m.storage.LoadBrief(issue.ID)
+	analysis, _ := m.storage.LoadAnalysis(issue.ID)
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
+
+	prompt := claude.BuildPlanPrompt(brief.Content, analysis)
+
+	m.statusMsg = fmt.Sprintf("Planning %s...", issue.ID)
+	m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
+}
+
+func (m Model) executePlanFor(issue *model.Issue) (Model, tea.Cmd) {
+	m.processingLock.Lock()
+	m.processing[issue.ID] = "plan"
+	m.processingLock.Unlock()
+
 	brief, _ := m.storage.LoadBrief(issue.ID)
 	analysis, _ := m.storage.LoadAnalysis(issue.ID)
 	sessionID, _ := m.storage.LoadSessionID(issue.ID)
@@ -1479,11 +1661,20 @@ func (m Model) implementIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Build prompt with plan path
+	// Implement always requires confirmation as it may modify code
+	m.state = StateConfirm
+	m.confirmMsg = fmt.Sprintf("Implement %s? This may modify code.", issue.ID)
+	m.pendingRetryIssue = issue
+	m.pendingImplement = true
+	m.confirmAction = nil // Will be handled specially in handleConfirmKey
+	return m, nil
+}
+
+func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
 	planPath := m.storage.PlanPath(issue.ID)
 	prompt := claude.BuildImplementPrompt(planPath)
 
-	// Run Claude CLI in interactive mode with --resume
 	cmd := exec.Command("claude", "--resume", sessionID, prompt)
 	cmd.Dir = m.claude.WorkingDir
 	cmd.Stdin = os.Stdin
