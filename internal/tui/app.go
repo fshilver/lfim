@@ -879,6 +879,46 @@ func placeOverlay(width, height int, overlay, background string) string {
 	return strings.Join(bgLines, "\n")
 }
 
+// renderBaseOverlay creates a consistently styled overlay popup
+// title: The header text for the overlay
+// content: The main content (can include viewport, input fields, etc.)
+// footer: The hint/action keys shown at the bottom
+// width: The desired width of the overlay (0 for auto)
+func (m Model) renderBaseOverlay(title, content, footer string, width int) string {
+	// Calculate width based on terminal size if not specified
+	if width == 0 {
+		width = m.width - 10
+	}
+	if width < 40 {
+		width = 40
+	}
+	if width > 100 {
+		width = 100
+	}
+
+	// Build the overlay content
+	var parts []string
+
+	// Title section
+	if title != "" {
+		parts = append(parts, OverlayStyles.Title.Render(title))
+	}
+
+	// Content section
+	if content != "" {
+		parts = append(parts, OverlayStyles.Content.Render(content))
+	}
+
+	// Footer section (action hints)
+	if footer != "" {
+		parts = append(parts, OverlayStyles.Footer.Render(footer))
+	}
+
+	innerContent := strings.Join(parts, "\n")
+
+	return OverlayStyles.Container.Width(width).Render(innerContent)
+}
+
 func (m Model) renderList(width, height int) string {
 	var lines []string
 
@@ -981,7 +1021,22 @@ func (m Model) renderPreview(width, height int) string {
 }
 
 func (m Model) renderInputOverlay() string {
-	if m.inputMode == InputReview && m.reviewAnalysis != "" {
+	// Determine title based on input mode
+	var title string
+	switch m.inputMode {
+	case InputNewIssue:
+		title = fmt.Sprintf("%s New Issue", OverlayIcons.Input)
+	case InputReview:
+		title = "Review Feedback"
+	case InputPlanReview:
+		title = "Plan Feedback"
+	default:
+		title = "Input"
+	}
+
+	// For review modes with content preview
+	if (m.inputMode == InputReview && m.reviewAnalysis != "") ||
+		(m.inputMode == InputPlanReview && m.reviewPlan != "") {
 		// Calculate width based on terminal size
 		popupWidth := m.width - 10
 		if popupWidth < 60 {
@@ -995,40 +1050,58 @@ func (m Model) renderInputOverlay() string {
 		scrollPercent := m.viewport.ScrollPercent() * 100
 		scrollInfo := fmt.Sprintf(" %3.0f%% ", scrollPercent)
 
-		return m.styles.PopupBorder.Width(popupWidth).Render(
-			fmt.Sprintf("%s\n%s\n%s%s\n%s\n%s",
-				m.styles.PopupTitle.Render("Current Analysis:"),
-				m.viewport.View(),
-				strings.Repeat("─", popupWidth-10),
-				scrollInfo,
-				m.styles.InputPrompt.Render(m.inputPrompt),
-				m.textInput.View(),
-			),
-		)
-	}
-
-	return m.styles.PopupBorder.Render(
-		fmt.Sprintf("%s\n%s",
+		// Build content with viewport and input
+		separator := OverlayStyles.Separator.Render(strings.Repeat("─", popupWidth-10))
+		inputSection := fmt.Sprintf("%s\n%s",
 			m.styles.InputPrompt.Render(m.inputPrompt),
 			m.textInput.View(),
-		),
+		)
+
+		content := fmt.Sprintf("%s\n%s%s\n\n%s",
+			m.viewport.View(),
+			separator,
+			OverlayStyles.Hint.Render(scrollInfo),
+			inputSection,
+		)
+
+		footer := "[Enter] Submit    [Esc] Back"
+
+		return m.renderBaseOverlay(title, content, footer, popupWidth)
+	}
+
+	// Simple input overlay (e.g., new issue title)
+	content := fmt.Sprintf("%s\n%s",
+		m.styles.InputPrompt.Render(m.inputPrompt),
+		m.textInput.View(),
 	)
+
+	footer := "[Enter] Submit    [Esc] Cancel"
+
+	return m.renderBaseOverlay(title, content, footer, 60)
 }
 
 func (m Model) renderConfirmOverlay() string {
-	return m.styles.PopupBorder.Render(
-		fmt.Sprintf("%s\n\n[y]es / [n]o",
-			m.styles.PopupTitle.Render(m.confirmMsg),
-		),
-	)
+	// Build content with icon
+	content := fmt.Sprintf("%s %s", OverlayIcons.Confirm, m.confirmMsg)
+
+	// Footer with action hints
+	footer := "[y] Yes    [n] No    [Esc] Cancel"
+
+	return m.renderBaseOverlay("Confirm", content, footer, 50)
 }
 
 func (m Model) renderTypeSelectOverlay() string {
-	return m.styles.PopupBorder.Render(
-		fmt.Sprintf("%s\n\n[f]eature  [b]ug  [r]efactor\n\n[esc] cancel",
-			m.styles.PopupTitle.Render("Select issue type:"),
-		),
+	// Build options with icons on separate lines
+	options := fmt.Sprintf("  [f] Feature   %s\n  [b] Bug       %s\n  [r] Refactor  %s",
+		OverlayIcons.Feature,
+		OverlayIcons.Bug,
+		OverlayIcons.Refactor,
 	)
+
+	// Footer with cancel hint
+	footer := "[Esc] Cancel"
+
+	return m.renderBaseOverlay("Select Issue Type", options, footer, 40)
 }
 
 func (m Model) renderReviewPreviewOverlay() string {
@@ -1051,19 +1124,15 @@ func (m Model) renderReviewPreviewOverlay() string {
 		hScrollInfo = fmt.Sprintf(" H:%d ", m.hOffset)
 	}
 
-	// Help text for actions
-	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll  ←→/h/l pan"
+	// Build content with viewport and scroll info
+	separator := OverlayStyles.Separator.Render(strings.Repeat("─", popupWidth-10))
+	scrollHints := OverlayStyles.Hint.Render(scrollInfo + hScrollInfo)
+	content := fmt.Sprintf("%s\n%s%s", m.viewport.View(), separator, scrollHints)
 
-	return m.styles.PopupBorder.Width(popupWidth).Render(
-		fmt.Sprintf("%s\n%s\n%s%s%s\n\n%s",
-			m.styles.PopupTitle.Render("Review Analysis:"),
-			m.viewport.View(),
-			strings.Repeat("─", popupWidth-10),
-			scrollInfo,
-			hScrollInfo,
-			helpText,
-		),
-	)
+	// Footer with action hints
+	footer := "[e] Edit    [f] Feedback    [c] Close    ↑↓ Scroll    ←→ Pan"
+
+	return m.renderBaseOverlay("Review Analysis", content, footer, popupWidth)
 }
 
 func (m Model) renderPlanPreviewOverlay() string {
@@ -1086,19 +1155,15 @@ func (m Model) renderPlanPreviewOverlay() string {
 		hScrollInfo = fmt.Sprintf(" H:%d ", m.hOffset)
 	}
 
-	// Help text for actions
-	helpText := "[e]dit  [f]eedback  [c]lose   ↑↓/j/k scroll  ←→/h/l pan"
+	// Build content with viewport and scroll info
+	separator := OverlayStyles.Separator.Render(strings.Repeat("─", popupWidth-10))
+	scrollHints := OverlayStyles.Hint.Render(scrollInfo + hScrollInfo)
+	content := fmt.Sprintf("%s\n%s%s", m.viewport.View(), separator, scrollHints)
 
-	return m.styles.PopupBorder.Width(popupWidth).Render(
-		fmt.Sprintf("%s\n%s\n%s%s%s\n\n%s",
-			m.styles.PopupTitle.Render("Review Plan:"),
-			m.viewport.View(),
-			strings.Repeat("─", popupWidth-10),
-			scrollInfo,
-			hScrollInfo,
-			helpText,
-		),
-	)
+	// Footer with action hints
+	footer := "[e] Edit    [f] Feedback    [c] Close    ↑↓ Scroll    ←→ Pan"
+
+	return m.renderBaseOverlay("Review Plan", content, footer, popupWidth)
 }
 
 func (m Model) renderCommitConfirmOverlay() string {
@@ -1121,43 +1186,44 @@ func (m Model) renderCommitConfirmOverlay() string {
 	}
 
 	// Wrap commit message for display
-	wrapped := wrapText(m.pendingCommitMsg, popupWidth-6)
+	wrapped := wrapText(m.pendingCommitMsg, popupWidth-10)
 	lines := strings.Split(wrapped, "\n")
 	if len(lines) > viewportHeight {
 		lines = lines[:viewportHeight]
 	}
 	displayMsg := strings.Join(lines, "\n")
 
-	issueInfo := ""
+	// Build title with issue info
+	title := fmt.Sprintf("%s Commit Message", OverlayIcons.Commit)
 	if m.pendingCloseIssue != nil {
-		issueInfo = fmt.Sprintf(" [%s] %s", m.pendingCloseIssue.ID, m.pendingCloseIssue.Title)
+		title = fmt.Sprintf("%s Commit [%s]", OverlayIcons.Commit, m.pendingCloseIssue.ID)
 	}
 
-	helpText := "[y]es/Enter: commit   [n]/Esc: cancel   ↑↓ scroll"
+	// Content with separator and message
+	separator := OverlayStyles.Separator.Render(strings.Repeat("─", popupWidth-10))
+	content := fmt.Sprintf("%s\n\n%s", separator, displayMsg)
 
-	return m.styles.PopupBorder.Width(popupWidth).Render(
-		fmt.Sprintf("%s\n%s\n\n%s\n\n%s",
-			m.styles.PopupTitle.Render("Commit Message:"+issueInfo),
-			strings.Repeat("─", popupWidth-6),
-			displayMsg,
-			helpText,
-		),
-	)
+	footer := "[y] Commit    [n] Cancel    ↑↓ Scroll"
+
+	return m.renderBaseOverlay(title, content, footer, popupWidth)
 }
 
 func (m Model) renderCommitGeneratingOverlay() string {
 	spinner := SpinnerFrames[m.spinnerFrame]
-	issueInfo := ""
+
+	// Build title with issue info
+	title := "Closing Issue"
 	if m.pendingCloseIssue != nil {
-		issueInfo = fmt.Sprintf(" [%s]", m.pendingCloseIssue.ID)
+		title = fmt.Sprintf("Closing Issue [%s]", m.pendingCloseIssue.ID)
 	}
 
-	return m.styles.PopupBorder.Render(
-		fmt.Sprintf("%s\n\n%s Generating commit message with Haiku...",
-			m.styles.PopupTitle.Render("Closing Issue"+issueInfo),
-			spinner,
-		),
-	)
+	// Content with spinner animation
+	content := fmt.Sprintf("%s  Generating commit message...", spinner)
+
+	// No footer during processing (input is blocked)
+	footer := OverlayStyles.Hint.Render("Please wait...")
+
+	return m.renderBaseOverlay(title, content, footer, 50)
 }
 
 // Actions

@@ -103,3 +103,57 @@ var StatusIcons = map[string]string{
 
 // Spinner frames for processing animation
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// OverlayIcons defines icons used in overlay popups
+var OverlayIcons = struct {
+	Feature  string
+	Bug      string
+	Refactor string
+	Confirm  string
+	Success  string
+	Input    string
+	Commit   string
+}{
+	Feature:  "💡",
+	Bug:      "💥",
+	Refactor: "🔧",
+	Confirm:  "⚠️ ",
+	Success:  "✓",
+	Input:    "✎",
+	Commit:   "📝",
+}
+
+// OverlayStyles defines styles for overlay popups
+var OverlayStyles = struct {
+	Container lipgloss.Style
+	Title     lipgloss.Style
+	Content   lipgloss.Style
+	Footer    lipgloss.Style
+	Hint      lipgloss.Style
+	Selected  lipgloss.Style
+	Option    lipgloss.Style
+	Separator lipgloss.Style
+}{
+	Container: lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2),
+	Title: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212")).
+		MarginBottom(1),
+	Content: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")),
+	Footer: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(1),
+	Hint: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")),
+	Selected: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true),
+	Option: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")),
+	Separator: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")),
+}
