@@ -6,6 +6,17 @@ import (
 	"strings"
 )
 
+// StageIssueFiles stages all issue files (brief, analysis, plan, index) for git commit.
+// Called before implement to stage confirmed files.
+func (s *Storage) StageIssueFiles(issueID string) {
+	s.gitAdd(
+		s.BriefPath(issueID),
+		s.AnalysisPath(issueID),
+		s.PlanPath(issueID),
+		s.IndexPath(),
+	)
+}
+
 // gitAdd stages files to git. Silently fails if not a git repo.
 func (s *Storage) gitAdd(paths ...string) {
 	var existing []string

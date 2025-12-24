@@ -283,7 +283,6 @@ func (s *Storage) SaveAnalysis(issueID, content string) error {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return err
 	}
-	s.gitAdd(path, s.IndexPath())
 	return nil
 }
 
@@ -293,7 +292,6 @@ func (s *Storage) SavePlan(issueID, content string) error {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return err
 	}
-	s.gitAdd(path, s.IndexPath())
 	return nil
 }
 
@@ -367,7 +365,7 @@ func (s *Storage) SaveAnalysisVersioned(issueID, content string, version int) er
 		return err
 	}
 
-	s.gitAdd(versionPath, s.AnalysisPath(issueID), trackerPath)
+	s.gitAdd(versionPath, trackerPath)
 	return nil
 }
 

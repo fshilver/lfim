@@ -1831,6 +1831,9 @@ func (m Model) implementIssue() (Model, tea.Cmd) {
 }
 
 func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
+	// Stage issue files before implementation
+	m.storage.StageIssueFiles(issue.ID)
+
 	sessionID, _ := m.storage.LoadSessionID(issue.ID)
 	planPath := m.storage.PlanPath(issue.ID)
 	prompt := claude.BuildImplementPrompt(planPath)
