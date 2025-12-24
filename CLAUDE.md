@@ -10,14 +10,14 @@ Markdown 기반 로컬 이슈 관리 CLI/TUI 도구. 외부 SaaS 의존성 없�
 - TUI: Bubble Tea (charmbracelet/bubbletea)
 - CLI: Cobra (spf13/cobra)
 - Styling: Lipgloss (charmbracelet/lipgloss)
-- CLI 명령어: `im`
+- CLI 명령어: `lfim`
 
 ## Project Structure
 
 ```
 .
 ├── cmd/
-│   └── im/main.go           # CLI 진입점
+│   └── lfim/main.go         # CLI 진입점
 ├── internal/
 │   ├── model/
 │   │   ├── issue.go         # Issue, IssueStatus, IssueType

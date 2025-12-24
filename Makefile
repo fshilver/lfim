@@ -1,7 +1,7 @@
 .PHONY: build run clean test deps
 
 # Binary name
-BINARY_NAME=im
+BINARY_NAME=lfim
 
 # Build directory
 BUILD_DIR=./dist
@@ -18,15 +18,15 @@ GOFMT=$(GOCMD) fmt
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/im
+	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/lfim
 
 # Run in development mode
 run:
-	$(GORUN) ./cmd/im
+	$(GORUN) ./cmd/lfim
 
 # Run with specific path
 run-path:
-	$(GORUN) ./cmd/im --path ..
+	$(GORUN) ./cmd/lfim --path ..
 
 # Install dependencies
 deps:
@@ -60,10 +60,10 @@ install: build
 build-all: clean
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/im
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/im
-	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/im
-	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/im
+	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/lfim
+	GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/lfim
+	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/lfim
+	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/lfim
 
 # Show help
 help:

@@ -11,7 +11,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "im",
+	Use:   "lfim",
 	Short: "Local-first markdown-based issue management CLI/TUI",
 	Long: `Issue Manager is a local-first, markdown-based issue management tool.
 
