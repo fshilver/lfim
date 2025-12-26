@@ -2365,7 +2365,7 @@ func (m Model) renderOptionSelectView() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
 	// Footer
-	keys := "[↑/↓] Navigate  [Ctrl+↑/↓/←/→] Scroll Detail  [Enter] Select & Plan  [n] Add Option  [e] Edit  [Esc] Cancel"
+	keys := "[↑/↓] Navigate  [Ctrl+↑↓←→/hjkl] Scroll Detail  [Enter] Select & Plan  [n] Add Option  [e] Edit  [Esc] Cancel"
 	footer := m.styles.Footer.Render(keys)
 	status := m.styles.StatusBar.Render(m.statusMsg)
 
@@ -2507,28 +2507,26 @@ func (m Model) renderRightPanel(width, height int) string {
 		return title + "\nNo option selected"
 	}
 
-	option := &m.analysis.Options[m.optionCursor]
-	content := m.renderOptionDetail(option)
+	// Update viewport dimensions for current panel size
+	viewportHeight := height - 3 // minus title and hint
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+	m.detailViewport.Width = width
+	m.detailViewport.Height = viewportHeight
+
+	// Get viewport content (respects scroll position)
+	viewportContent := m.detailViewport.View()
 
 	// Apply horizontal scroll offset
 	if m.detailHOffset > 0 {
-		content = applyHorizontalOffset(content, m.detailHOffset, width)
-	}
-
-	// Wrap content to width
-	wrapped := wrapText(content, width)
-	lines := strings.Split(wrapped, "\n")
-
-	// Limit to available height (minus title and hint)
-	maxLines := height - 3
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
+		viewportContent = applyHorizontalOffset(viewportContent, m.detailHOffset, width)
 	}
 
 	// Add scroll hint at bottom
-	hint := OverlayStyles.Hint.Render("[Ctrl+↑↓←→] Scroll detail")
+	hint := OverlayStyles.Hint.Render("[Ctrl+↑↓←→/hjkl] Scroll detail")
 
-	return title + "\n" + strings.Join(lines, "\n") + "\n" + hint
+	return title + "\n" + viewportContent + "\n" + hint
 }
 
 func (m Model) renderOptionDetail(option *model.AnalysisOption) string {
