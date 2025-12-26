@@ -1755,11 +1755,10 @@ func (m Model) executeReview(feedback string) (Model, tea.Cmd) {
 	m.processing[issue.ID] = "review"
 	m.processingLock.Unlock()
 
-	// Load current analysis
-	analysis, _ := m.storage.LoadAnalysis(issue.ID)
+	analysisPath := m.storage.AnalysisPath(issue.ID)
 	sessionID, _ := m.storage.LoadSessionID(issue.ID)
 
-	prompt := claude.BuildReviewPrompt(analysis, feedback)
+	prompt := claude.BuildReviewPrompt(analysisPath, feedback)
 
 	m.statusMsg = fmt.Sprintf("Reviewing %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "review", prompt, "", sessionID, m.resultChan)
@@ -1783,11 +1782,10 @@ func (m Model) executePlanReview(feedback string) (Model, tea.Cmd) {
 	m.processing[issue.ID] = "plan-review"
 	m.processingLock.Unlock()
 
-	// Load current plan
-	plan, _ := m.storage.LoadPlan(issue.ID)
+	planPath := m.storage.PlanPath(issue.ID)
 	sessionID, _ := m.storage.LoadSessionID(issue.ID)
 
-	prompt := claude.BuildPlanReviewPrompt(plan, feedback)
+	prompt := claude.BuildPlanReviewPrompt(planPath, feedback)
 
 	m.statusMsg = fmt.Sprintf("Reviewing plan %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "plan-review", prompt, "", sessionID, m.resultChan)

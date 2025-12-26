@@ -74,51 +74,53 @@ Numbered list of specific tasks:
 }
 
 // BuildReviewPrompt builds the review/refinement prompt
-func BuildReviewPrompt(currentAnalysis, feedback string) string {
+func BuildReviewPrompt(analysisPath, feedback string) string {
 	return fmt.Sprintf(`%s## Context
-You previously provided the following analysis:
-
----
-%s
----
+The current analysis is in: %s
 
 ## User Feedback
-The user has reviewed your analysis and provided the following feedback:
-
 %s
 
 ## Task
-Please revise your analysis based on this feedback. Maintain the same structure
-but address the specific concerns or suggestions raised.
+Read the analysis file and revise it based on the feedback following these CRITICAL rules:
+
+1. **PRESERVE ALL EXISTING CONTENT** - Keep ALL sections and content that are NOT directly addressed by the feedback. Do NOT remove or summarize existing analysis.
+2. **ADD rather than REPLACE** - When adding new suggestions or alternatives, APPEND them to existing content rather than replacing what was there.
+3. **MAINTAIN ALL SECTION HEADERS** - Keep every original section header (Root Cause, Options, Risk Assessment, etc.). Do NOT remove any sections.
+4. **ONLY MODIFY RELEVANT SECTIONS** - If feedback is about a specific topic (e.g., alternative solutions), only modify that specific section while keeping all other sections EXACTLY as they were.
+5. **BE ADDITIVE** - If the user suggests a new approach, add it as an ADDITIONAL option rather than removing existing analysis.
+
+IMPORTANT: The revised analysis MUST contain all the same section headers as the original. Missing sections is a critical error.
 
 ## Output Format
 Return the complete revised analysis as markdown.
 Start immediately with the first section header.
-Do NOT wrap output in code blocks.`, readOnlyConstraints, currentAnalysis, feedback)
+Do NOT wrap output in code blocks.`, readOnlyConstraints, analysisPath, feedback)
 }
 
 // BuildPlanReviewPrompt builds the plan review/refinement prompt
-func BuildPlanReviewPrompt(currentPlan, feedback string) string {
+func BuildPlanReviewPrompt(planPath, feedback string) string {
 	return fmt.Sprintf(`%s## Context
-You previously provided the following implementation plan:
-
----
-%s
----
+The current implementation plan is in: %s
 
 ## User Feedback
-The user has reviewed your plan and provided the following feedback:
-
 %s
 
 ## Task
-Please revise your implementation plan based on this feedback. Maintain the same structure
-but address the specific concerns or suggestions raised.
+Read the plan file and revise it based on the feedback following these CRITICAL rules:
+
+1. **PRESERVE ALL EXISTING CONTENT** - Keep ALL sections and content that are NOT directly addressed by the feedback. Do NOT remove or summarize existing plan details.
+2. **ADD rather than REPLACE** - When adding new tasks or modifications, APPEND them to existing content rather than replacing what was there.
+3. **MAINTAIN ALL SECTION HEADERS** - Keep every original section header (Plan Summary, Implementation Tasks, Files Modified, Testing Approach, Risk Mitigation, etc.). Do NOT remove any sections.
+4. **ONLY MODIFY RELEVANT SECTIONS** - If feedback is about a specific topic (e.g., testing approach), only modify that specific section while keeping all other sections EXACTLY as they were.
+5. **BE ADDITIVE** - If the user suggests a new task or approach, add it as an ADDITIONAL item rather than removing existing plan content.
+
+IMPORTANT: The revised plan MUST contain all the same section headers as the original. Missing sections is a critical error.
 
 ## Output Format
 Return the complete revised plan as markdown.
 Start immediately with the first section header.
-Do NOT wrap output in code blocks.`, readOnlyConstraints, currentPlan, feedback)
+Do NOT wrap output in code blocks.`, readOnlyConstraints, planPath, feedback)
 }
 
 // BuildImplementPrompt builds the implementation prompt for interactive mode
