@@ -141,6 +141,9 @@ type Model struct {
 	detailViewport     viewport.Model  // viewport for option detail section
 	detailHOffset      int             // horizontal scroll offset for detail panel
 	detailMaxLineWidth int             // max line width in detail content
+
+	// View-only mode for closed issues
+	isViewOnly bool // true when viewing closed/invalid issues in review mode
 }
 
 // New creates a new TUI model
@@ -641,8 +644,16 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Action keys
 	case "e":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot edit closed issue"
+			return m, nil
+		}
 		return m.editAnalysis()
 	case "f":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot provide feedback for closed issue"
+			return m, nil
+		}
 		// Switch to feedback input mode
 		m.state = StateInput
 		m.inputMode = InputReview
@@ -653,6 +664,7 @@ func (m Model) handleReviewPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = StateNormal
 		m.reviewAnalysis = ""
 		m.hOffset = 0
+		m.isViewOnly = false
 		return m, nil
 	}
 
@@ -716,8 +728,16 @@ func (m Model) handlePlanPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Action keys
 	case "e":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot edit closed issue"
+			return m, nil
+		}
 		return m.editPlan()
 	case "f":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot provide feedback for closed issue"
+			return m, nil
+		}
 		// Switch to feedback input mode
 		m.state = StateInput
 		m.inputMode = InputPlanReview
@@ -728,6 +748,7 @@ func (m Model) handlePlanPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = StateNormal
 		m.reviewPlan = ""
 		m.hOffset = 0
+		m.isViewOnly = false
 		return m, nil
 	}
 
@@ -1476,9 +1497,8 @@ func (m Model) createIssue(issueType model.IssueType) (Model, tea.Cmd) {
 }
 
 func (m Model) editIssue() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -1553,9 +1573,8 @@ func (m Model) editPlan() (Model, tea.Cmd) {
 }
 
 func (m Model) confirmClose() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -1592,9 +1611,8 @@ func (m Model) confirmClose() (Model, tea.Cmd) {
 }
 
 func (m Model) confirmDiscard() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -1608,9 +1626,8 @@ func (m Model) confirmDiscard() (Model, tea.Cmd) {
 }
 
 func (m Model) analyzeIssue() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -1682,9 +1699,8 @@ func (m Model) executeAnalyzeFor(issue *model.Issue) (Model, tea.Cmd) {
 }
 
 func (m Model) planIssue() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -1800,6 +1816,9 @@ func (m Model) reviewIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Set view-only mode for closed issues
+	m.isViewOnly = issue.Status.IsClosed()
+
 	// Check for JSON analysis first (new option selection flow)
 	if m.storage.AnalysisJSONExists(issue.ID) {
 		analysis, err := m.storage.LoadAnalysisJSON(issue.ID)
@@ -1863,6 +1882,9 @@ func (m Model) planReviewIssue() (Model, tea.Cmd) {
 		m.statusMsg = "No issue selected"
 		return m, nil
 	}
+
+	// Set view-only mode for closed issues
+	m.isViewOnly = issue.Status.IsClosed()
 
 	if !m.storage.PlanExists(issue.ID) {
 		m.statusMsg = "Plan first (press 'p')"
@@ -1966,9 +1988,8 @@ func (m Model) executePlanReview(feedback string) (Model, tea.Cmd) {
 }
 
 func (m Model) implementIssue() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -2023,9 +2044,8 @@ func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
 }
 
 func (m Model) updateChangeLog() (Model, tea.Cmd) {
-	issue := m.getSelectedIssue()
+	issue := m.canModifySelectedIssue()
 	if issue == nil {
-		m.statusMsg = "No issue selected"
 		return m, nil
 	}
 
@@ -2095,6 +2115,22 @@ func (m Model) getSelectedIssue() *model.Issue {
 		return m.issues[m.selected]
 	}
 	return nil
+}
+
+// canModifySelectedIssue checks if the selected issue can be modified.
+// Returns the issue if modifiable, nil otherwise.
+// Sets appropriate status message if not modifiable.
+func (m *Model) canModifySelectedIssue() *model.Issue {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return nil
+	}
+	if issue.Status.IsClosed() {
+		m.statusMsg = "Cannot modify closed issue"
+		return nil
+	}
+	return issue
 }
 
 // Helper functions
@@ -2359,6 +2395,10 @@ func (m Model) handleOptionSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Select and proceed to plan
 	case "enter":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot select option for closed issue"
+			return m, nil
+		}
 		selectedOption := m.analysis.Options[m.optionCursor]
 		issue := m.getSelectedIssue()
 		if issue == nil {
@@ -2380,6 +2420,10 @@ func (m Model) handleOptionSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Add new option
 	case "n":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot add option for closed issue"
+			return m, nil
+		}
 		m.state = StateInput
 		m.inputMode = InputAddOption
 		m.inputPrompt = "Describe your approach: "
@@ -2388,12 +2432,17 @@ func (m Model) handleOptionSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Edit analysis.json in external editor
 	case "e":
+		if m.isViewOnly {
+			m.statusMsg = "Read-only: cannot edit closed issue"
+			return m, nil
+		}
 		return m.editAnalysisJSON()
 
 	// Cancel
 	case "esc", "q":
 		m.state = StateNormal
 		m.analysis = nil
+		m.isViewOnly = false
 		m.statusMsg = "Cancelled option selection"
 		return m, nil
 	}
