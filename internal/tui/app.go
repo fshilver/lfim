@@ -53,6 +53,7 @@ const (
 	StatePlanPreview
 	StateCommitConfirm
 	StateCommitGenerating
+	StateOptionSelect
 )
 
 // InputMode represents what input is being collected
@@ -63,6 +64,7 @@ const (
 	InputNewIssue
 	InputReview
 	InputPlanReview
+	InputAddOption
 )
 
 // Model is the main Bubble Tea model
@@ -129,6 +131,14 @@ type Model struct {
 	listVOffset      int // vertical scroll offset for issue list
 	listHOffset      int // horizontal scroll offset for issue list
 	listMaxLineWidth int // max line width in issue list
+
+	// Option selection state
+	analysis           *model.Analysis // current analysis for option selection
+	optionCursor       int             // cursor position in option list
+	summaryViewport    viewport.Model  // viewport for summary section
+	detailViewport     viewport.Model  // viewport for option detail section
+	detailHOffset      int             // horizontal scroll offset for detail panel
+	detailMaxLineWidth int             // max line width in detail content
 }
 
 // New creates a new TUI model
@@ -141,18 +151,22 @@ func New(projectPath string) Model {
 	ti.Width = 50
 
 	vp := viewport.New(40, 20)
+	summaryVp := viewport.New(40, 10)
+	detailVp := viewport.New(40, 20)
 
 	return Model{
-		storage:        s,
-		claude:         claude.New(projectPath),
-		keys:           DefaultKeyMap(),
-		styles:         DefaultStyles(),
-		processing:     make(map[string]string),
-		processingLock: &sync.Mutex{},
-		resultChan:     make(chan claude.TaskResult, 10),
-		textInput:      ti,
-		viewport:       vp,
-		filterMode:     FilterActive,
+		storage:         s,
+		claude:          claude.New(projectPath),
+		keys:            DefaultKeyMap(),
+		styles:          DefaultStyles(),
+		processing:      make(map[string]string),
+		processingLock:  &sync.Mutex{},
+		resultChan:      make(chan claude.TaskResult, 10),
+		textInput:       ti,
+		viewport:        vp,
+		summaryViewport: summaryVp,
+		detailViewport:  detailVp,
+		filterMode:      FilterActive,
 	}
 }
 
@@ -305,6 +319,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateCommitGenerating:
 		// Ignore key input while generating
 		return m, nil
+	case StateOptionSelect:
+		return m.handleOptionSelectKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -445,6 +461,16 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputMode = InputNone
 			m.reviewPlan = ""
 			return m.executePlanReview(value)
+		case InputAddOption:
+			if value == "" {
+				// Go back to option select
+				m.state = StateOptionSelect
+				m.inputMode = InputNone
+				return m, nil
+			}
+			m.state = StateOptionSelect
+			m.inputMode = InputNone
+			return m.executeAddOption(value)
 		default:
 			m.state = StateNormal
 			return m, nil
@@ -461,6 +487,13 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.inputMode == InputPlanReview {
 			// Go back to plan preview
 			m.state = StatePlanPreview
+			m.inputMode = InputNone
+			m.textInput.Reset()
+			return m, nil
+		}
+		if m.inputMode == InputAddOption {
+			// Go back to option select
+			m.state = StateOptionSelect
 			m.inputMode = InputNone
 			m.textInput.Reset()
 			return m, nil
@@ -730,12 +763,30 @@ func (m *Model) handleResult(result claude.TaskResult) {
 	switch result.TaskType {
 	case "analyze":
 		if result.Success {
+			// Try to parse as JSON first
+			analysis, err := storage.ParseAnalysisFromRaw(result.Result)
+			if err == nil && analysis != nil {
+				// Save as JSON
+				if saveErr := m.storage.SaveAnalysisJSON(result.IssueID, analysis); saveErr == nil {
+					if result.SessionID != "" {
+						_ = m.storage.SaveSessionID(result.IssueID, result.SessionID)
+					}
+					_ = m.storage.UpdateIssueStatus(result.IssueID, model.StatusAnalyzed, "")
+					m.statusMsg = fmt.Sprintf("Analyzed %s - select option with R", result.IssueID)
+
+					// Enter option select state
+					*m = m.enterOptionSelectState(analysis)
+					return
+				}
+			}
+
+			// Fallback to markdown if JSON parsing fails
 			_ = m.storage.SaveAnalysis(result.IssueID, result.Result)
 			if result.SessionID != "" {
 				_ = m.storage.SaveSessionID(result.IssueID, result.SessionID)
 			}
 			_ = m.storage.UpdateIssueStatus(result.IssueID, model.StatusAnalyzed, "")
-			m.statusMsg = fmt.Sprintf("Analyzed %s", result.IssueID)
+			m.statusMsg = fmt.Sprintf("Analyzed %s (text mode)", result.IssueID)
 		} else {
 			m.statusMsg = fmt.Sprintf("Analyze %s failed", result.IssueID)
 		}
@@ -767,6 +818,28 @@ func (m *Model) handleResult(result claude.TaskResult) {
 		} else {
 			m.statusMsg = fmt.Sprintf("Plan review %s failed", result.IssueID)
 		}
+	case "add-option":
+		if result.Success {
+			// Parse the new option
+			newOption, err := storage.ExtractOptionFromRaw(result.Result)
+			if err == nil && newOption != nil {
+				// Load current analysis and add the option
+				analysis, loadErr := m.storage.LoadAnalysisJSON(result.IssueID)
+				if loadErr == nil && analysis != nil {
+					analysis.AddOption(*newOption)
+					if saveErr := m.storage.SaveAnalysisJSON(result.IssueID, analysis); saveErr == nil {
+						m.analysis = analysis
+						m.optionCursor = len(analysis.Options) - 1 // Move cursor to new option
+						m.updateDetailViewport()
+						m.statusMsg = fmt.Sprintf("Added option: %s", newOption.Title)
+						return
+					}
+				}
+			}
+			m.statusMsg = fmt.Sprintf("Failed to add option: %v", err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Add option failed for %s", result.IssueID)
+		}
 	case "commit":
 		if result.Success {
 			m.pendingCommitMsg = strings.TrimSpace(result.Result)
@@ -784,6 +857,11 @@ func (m *Model) handleResult(result claude.TaskResult) {
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading..."
+	}
+
+	// Handle full-screen states
+	if m.state == StateOptionSelect {
+		return m.renderOptionSelectView()
 	}
 
 	// Calculate layout - reserve 3 lines for header(1) + footer(1) + status(1)
@@ -1503,10 +1581,10 @@ func (m Model) analyzeIssue() (Model, tea.Cmd) {
 	}
 	m.processingLock.Unlock()
 
-	// Check if analysis already exists
-	if m.storage.AnalysisExists(issue.ID) {
+	// Check if analysis already exists (JSON or markdown)
+	if m.storage.AnalysisJSONExists(issue.ID) || m.storage.AnalysisExists(issue.ID) {
 		m.state = StateConfirm
-		m.confirmMsg = fmt.Sprintf("analysis.md exists for %s. Re-analyze?", issue.ID)
+		m.confirmMsg = fmt.Sprintf("Analysis exists for %s. Re-analyze?", issue.ID)
 		m.pendingRetryIssue = issue
 		m.confirmAction = func() {
 			m.executeAnalyze()
@@ -1534,7 +1612,8 @@ func (m *Model) executeAnalyze() {
 	}
 
 	briefPath := m.storage.BriefPath(issue.ID)
-	prompt := claude.BuildAnalysisPrompt(brief.Content, briefPath)
+	// Use JSON prompt for structured output
+	prompt := claude.BuildAnalysisPromptJSON(brief.Content, briefPath)
 
 	m.statusMsg = fmt.Sprintf("Analyzing %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "analyze", prompt, "", "", m.resultChan)
@@ -1552,7 +1631,8 @@ func (m Model) executeAnalyzeFor(issue *model.Issue) (Model, tea.Cmd) {
 	}
 
 	briefPath := m.storage.BriefPath(issue.ID)
-	prompt := claude.BuildAnalysisPrompt(brief.Content, briefPath)
+	// Use JSON prompt for structured output
+	prompt := claude.BuildAnalysisPromptJSON(brief.Content, briefPath)
 
 	m.statusMsg = fmt.Sprintf("Analyzing %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "analyze", prompt, "", "", m.resultChan)
@@ -1567,9 +1647,26 @@ func (m Model) planIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if !m.storage.AnalysisExists(issue.ID) {
+	// Check for analysis (JSON or markdown)
+	hasJSONAnalysis := m.storage.AnalysisJSONExists(issue.ID)
+	hasMDAnalysis := m.storage.AnalysisExists(issue.ID)
+
+	if !hasJSONAnalysis && !hasMDAnalysis {
 		m.statusMsg = "Analyze first"
 		return m, nil
+	}
+
+	// If JSON analysis exists but no option selected, prompt to select
+	if hasJSONAnalysis {
+		analysis, err := m.storage.LoadAnalysisJSON(issue.ID)
+		if err == nil && analysis != nil && len(analysis.Options) > 0 {
+			if analysis.SelectedOptionID == "" {
+				// No option selected - enter option selection
+				m.statusMsg = "Select an option first (press R)"
+				m = m.enterOptionSelectState(analysis)
+				return m, nil
+			}
+		}
 	}
 
 	m.processingLock.Lock()
@@ -1605,10 +1702,22 @@ func (m *Model) executePlan() {
 	m.processingLock.Unlock()
 
 	brief, _ := m.storage.LoadBrief(issue.ID)
-	analysis, _ := m.storage.LoadAnalysis(issue.ID)
 	sessionID, _ := m.storage.LoadSessionID(issue.ID)
 
-	prompt := claude.BuildPlanPrompt(brief.Content, analysis)
+	// Try JSON analysis with selected option first
+	if m.storage.AnalysisJSONExists(issue.ID) {
+		analysis, err := m.storage.LoadAnalysisJSON(issue.ID)
+		if err == nil && analysis != nil {
+			prompt := claude.BuildPlanPromptWithOption(brief.Content, analysis)
+			m.statusMsg = fmt.Sprintf("Planning %s with selected option...", issue.ID)
+			m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
+			return
+		}
+	}
+
+	// Fall back to markdown analysis
+	analysisContent, _ := m.storage.LoadAnalysis(issue.ID)
+	prompt := claude.BuildPlanPrompt(brief.Content, analysisContent)
 
 	m.statusMsg = fmt.Sprintf("Planning %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
@@ -1620,10 +1729,22 @@ func (m Model) executePlanFor(issue *model.Issue) (Model, tea.Cmd) {
 	m.processingLock.Unlock()
 
 	brief, _ := m.storage.LoadBrief(issue.ID)
-	analysis, _ := m.storage.LoadAnalysis(issue.ID)
 	sessionID, _ := m.storage.LoadSessionID(issue.ID)
 
-	prompt := claude.BuildPlanPrompt(brief.Content, analysis)
+	// Try JSON analysis with selected option first
+	if m.storage.AnalysisJSONExists(issue.ID) {
+		analysis, err := m.storage.LoadAnalysisJSON(issue.ID)
+		if err == nil && analysis != nil {
+			prompt := claude.BuildPlanPromptWithOption(brief.Content, analysis)
+			m.statusMsg = fmt.Sprintf("Planning %s with selected option...", issue.ID)
+			m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
+			return m, nil
+		}
+	}
+
+	// Fall back to markdown analysis
+	analysisContent, _ := m.storage.LoadAnalysis(issue.ID)
+	prompt := claude.BuildPlanPrompt(brief.Content, analysisContent)
 
 	m.statusMsg = fmt.Sprintf("Planning %s...", issue.ID)
 	m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
@@ -1638,6 +1759,16 @@ func (m Model) reviewIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Check for JSON analysis first (new option selection flow)
+	if m.storage.AnalysisJSONExists(issue.ID) {
+		analysis, err := m.storage.LoadAnalysisJSON(issue.ID)
+		if err == nil && analysis != nil && len(analysis.Options) > 0 {
+			m = m.enterOptionSelectState(analysis)
+			return m, nil
+		}
+	}
+
+	// Fall back to markdown analysis review
 	if !m.storage.AnalysisExists(issue.ID) {
 		m.statusMsg = "Analyze first"
 		return m, nil
@@ -2049,4 +2180,501 @@ func (m *Model) calculateListMaxLineWidth() {
 			m.listMaxLineWidth = w
 		}
 	}
+}
+
+// Option Selection functions
+
+func (m Model) handleOptionSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.analysis == nil || len(m.analysis.Options) == 0 {
+		m.state = StateNormal
+		m.statusMsg = "No options available"
+		return m, nil
+	}
+
+	// Horizontal scroll step size for detail panel
+	const detailHScrollStep = 5
+
+	switch msg.String() {
+	// Navigation (option selection)
+	case "up", "k":
+		if m.optionCursor > 0 {
+			m.optionCursor--
+			m.updateDetailViewport()
+		}
+		return m, nil
+	case "down", "j":
+		if m.optionCursor < len(m.analysis.Options)-1 {
+			m.optionCursor++
+			m.updateDetailViewport()
+		}
+		return m, nil
+
+	// Scroll detail viewport - vertical (Ctrl + up/down/j/k)
+	case "ctrl+up", "ctrl+k":
+		m.detailViewport.LineUp(1)
+		return m, nil
+	case "ctrl+down", "ctrl+j":
+		m.detailViewport.LineDown(1)
+		return m, nil
+
+	// Half page scroll
+	case "ctrl+u":
+		m.detailViewport.HalfViewUp()
+		return m, nil
+	case "ctrl+d":
+		m.detailViewport.HalfViewDown()
+		return m, nil
+
+	// Scroll detail viewport - horizontal (Ctrl + left/right/h/l)
+	case "ctrl+left", "ctrl+h":
+		if m.detailHOffset > 0 {
+			m.detailHOffset -= detailHScrollStep
+			if m.detailHOffset < 0 {
+				m.detailHOffset = 0
+			}
+		}
+		return m, nil
+	case "ctrl+right", "ctrl+l":
+		maxOffset := m.detailMaxLineWidth - m.detailViewport.Width
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		if m.detailHOffset < maxOffset {
+			m.detailHOffset += detailHScrollStep
+			if m.detailHOffset > maxOffset {
+				m.detailHOffset = maxOffset
+			}
+		}
+		return m, nil
+
+	// Select and proceed to plan
+	case "enter":
+		selectedOption := m.analysis.Options[m.optionCursor]
+		issue := m.getSelectedIssue()
+		if issue == nil {
+			m.state = StateNormal
+			m.statusMsg = "No issue selected"
+			return m, nil
+		}
+
+		// Save the selected option
+		if err := m.storage.UpdateSelectedOption(issue.ID, selectedOption.ID); err != nil {
+			m.statusMsg = fmt.Sprintf("Failed to save selection: %v", err)
+			return m, nil
+		}
+
+		// Proceed to plan
+		m.state = StateNormal
+		m.statusMsg = fmt.Sprintf("Selected: %s - proceeding to plan", selectedOption.Title)
+		return m.executePlanWithOption(issue)
+
+	// Add new option
+	case "n":
+		m.state = StateInput
+		m.inputMode = InputAddOption
+		m.inputPrompt = "Describe your approach: "
+		m.textInput.Focus()
+		return m, nil
+
+	// Edit analysis.json in external editor
+	case "e":
+		return m.editAnalysisJSON()
+
+	// Cancel
+	case "esc", "q":
+		m.state = StateNormal
+		m.analysis = nil
+		m.statusMsg = "Cancelled option selection"
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateDetailViewport() {
+	if m.analysis == nil || m.optionCursor >= len(m.analysis.Options) {
+		return
+	}
+
+	option := m.analysis.Options[m.optionCursor]
+	content := m.renderOptionDetail(&option)
+	m.detailViewport.SetContent(content)
+	m.detailViewport.GotoTop()
+
+	// Reset horizontal scroll and calculate max line width
+	m.detailHOffset = 0
+	m.detailMaxLineWidth = calculateMaxLineWidth(content)
+}
+
+func (m Model) renderOptionSelectView() string {
+	if m.analysis == nil {
+		return "No analysis loaded"
+	}
+
+	// Calculate layout
+	// Header: 1 line, Footer: 2 lines (keys + status)
+	contentHeight := m.height - 3
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+
+	leftWidth := m.width / 2
+	rightWidth := m.width - leftWidth - 1
+
+	// Left panel heights: summary takes top 40%, options take bottom 60%
+	summaryHeight := contentHeight * 2 / 5
+	if summaryHeight < 3 {
+		summaryHeight = 3
+	}
+	optionsHeight := contentHeight - summaryHeight - 1 // -1 for separator
+
+	// Render header
+	issue := m.getSelectedIssue()
+	headerText := "Option Selection"
+	if issue != nil {
+		headerText = fmt.Sprintf("Option Selection [%s]", issue.ID)
+	}
+	header := m.styles.Header.Render(headerText)
+
+	// Render left panel: summary + options
+	leftContent := m.renderLeftPanel(leftWidth-2, summaryHeight, optionsHeight)
+	leftPanel := OptionSelectStyles.LeftPanel.
+		Width(leftWidth).
+		Height(contentHeight).
+		Render(leftContent)
+
+	// Render right panel: option detail
+	rightContent := m.renderRightPanel(rightWidth-2, contentHeight)
+	rightPanel := OptionSelectStyles.RightPanel.
+		Width(rightWidth).
+		Height(contentHeight).
+		Render(rightContent)
+
+	// Combine panels
+	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+
+	// Footer
+	keys := "[↑/↓] Navigate  [Ctrl+↑/↓/←/→] Scroll Detail  [Enter] Select & Plan  [n] Add Option  [e] Edit  [Esc] Cancel"
+	footer := m.styles.Footer.Render(keys)
+	status := m.styles.StatusBar.Render(m.statusMsg)
+
+	// Combine vertically
+	view := lipgloss.JoinVertical(lipgloss.Left, header, content, footer, status)
+
+	// Force exact terminal height
+	lines := strings.Split(view, "\n")
+	if len(lines) > m.height {
+		lines = lines[:m.height]
+	}
+	for len(lines) < m.height {
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderLeftPanel(width, summaryHeight, optionsHeight int) string {
+	// Summary section
+	summaryTitle := OptionSelectStyles.PanelTitle.Render("Analysis Summary")
+	summaryContent := m.renderSummarySection(width, summaryHeight-2)
+
+	// Separator
+	separator := OptionSelectStyles.PanelBorder.Render(strings.Repeat("─", width))
+
+	// Options section
+	optionsTitle := OptionSelectStyles.PanelTitle.Render("Implementation Options")
+	optionsContent := m.renderOptionsSection(width, optionsHeight-2)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		summaryTitle,
+		summaryContent,
+		separator,
+		optionsTitle,
+		optionsContent,
+	)
+}
+
+func (m Model) renderSummarySection(width, height int) string {
+	if m.analysis == nil {
+		return "No analysis"
+	}
+
+	content := m.analysis.Summary
+	if m.analysis.RootCause != "" {
+		content += "\n\n" + m.analysis.RootCause
+	}
+
+	// Wrap text to width
+	wrapped := wrapText(content, width)
+	lines := strings.Split(wrapped, "\n")
+
+	// Limit to height
+	if len(lines) > height {
+		lines = lines[:height-1]
+		lines = append(lines, "...")
+	}
+
+	// Pad to height
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	return OptionSelectStyles.SummaryContent.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderOptionsSection(width, height int) string {
+	if m.analysis == nil || len(m.analysis.Options) == 0 {
+		return "No options available"
+	}
+
+	var lines []string
+	for i, opt := range m.analysis.Options {
+		// Checkbox
+		checkbox := OptionSelectStyles.CheckboxUnchecked
+		if m.analysis.SelectedOptionID == opt.ID || (m.analysis.SelectedOptionID == "" && opt.Recommended) {
+			checkbox = OptionSelectStyles.CheckboxChecked
+		}
+
+		// Option text
+		optionText := fmt.Sprintf("%s %s", checkbox, opt.Title)
+
+		// Add recommended badge
+		if opt.Recommended {
+			optionText += " " + OptionSelectStyles.RecommendedBadge
+		}
+
+		// Truncate to width
+		if runewidth.StringWidth(optionText) > width {
+			optionText = runewidth.Truncate(optionText, width-3, "...")
+		}
+
+		// Style based on cursor position
+		if i == m.optionCursor {
+			optionText = OptionSelectStyles.OptionCursor.Render(optionText)
+		} else if opt.Recommended {
+			optionText = OptionSelectStyles.OptionRecommended.Render(optionText)
+		} else {
+			optionText = OptionSelectStyles.OptionNormal.Render(optionText)
+		}
+
+		lines = append(lines, optionText)
+	}
+
+	// Pad to height
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	// Limit to height
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderRightPanel(width, height int) string {
+	// Build title with scroll indicators
+	titleText := "Option Details"
+
+	// Add scroll indicators
+	scrollInfo := ""
+	if m.detailViewport.TotalLineCount() > m.detailViewport.Height {
+		scrollPercent := m.detailViewport.ScrollPercent() * 100
+		scrollInfo += fmt.Sprintf(" V:%3.0f%%", scrollPercent)
+	}
+	if m.detailHOffset > 0 {
+		scrollInfo += fmt.Sprintf(" H:%d", m.detailHOffset)
+	}
+	if scrollInfo != "" {
+		titleText += OverlayStyles.Hint.Render(scrollInfo)
+	}
+
+	title := OptionSelectStyles.PanelTitle.Render(titleText)
+
+	if m.analysis == nil || m.optionCursor >= len(m.analysis.Options) {
+		return title + "\nNo option selected"
+	}
+
+	option := &m.analysis.Options[m.optionCursor]
+	content := m.renderOptionDetail(option)
+
+	// Apply horizontal scroll offset
+	if m.detailHOffset > 0 {
+		content = applyHorizontalOffset(content, m.detailHOffset, width)
+	}
+
+	// Wrap content to width
+	wrapped := wrapText(content, width)
+	lines := strings.Split(wrapped, "\n")
+
+	// Limit to available height (minus title and hint)
+	maxLines := height - 3
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+
+	// Add scroll hint at bottom
+	hint := OverlayStyles.Hint.Render("[Ctrl+↑↓←→] Scroll detail")
+
+	return title + "\n" + strings.Join(lines, "\n") + "\n" + hint
+}
+
+func (m Model) renderOptionDetail(option *model.AnalysisOption) string {
+	var sb strings.Builder
+
+	// Title
+	sb.WriteString(OptionSelectStyles.DetailTitle.Render(option.Title))
+	sb.WriteString("\n\n")
+
+	// Description
+	if option.Description != "" {
+		sb.WriteString(OptionSelectStyles.DetailDescription.Render(option.Description))
+		sb.WriteString("\n\n")
+	}
+
+	// Pros
+	if len(option.Pros) > 0 {
+		sb.WriteString(OptionSelectStyles.ProLabel.Render("Pros:"))
+		sb.WriteString("\n")
+		for _, pro := range option.Pros {
+			sb.WriteString(OptionSelectStyles.ProItem.Render("+ " + pro))
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// Cons
+	if len(option.Cons) > 0 {
+		sb.WriteString(OptionSelectStyles.ConLabel.Render("Cons:"))
+		sb.WriteString("\n")
+		for _, con := range option.Cons {
+			sb.WriteString(OptionSelectStyles.ConItem.Render("- " + con))
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// Details
+	if option.Details != "" {
+		sb.WriteString("Details:\n")
+		sb.WriteString(option.Details)
+	}
+
+	return sb.String()
+}
+
+func (m Model) enterOptionSelectState(analysis *model.Analysis) Model {
+	m.state = StateOptionSelect
+	m.analysis = analysis
+	m.optionCursor = analysis.GetRecommendedIndex()
+
+	// Setup viewports
+	contentHeight := m.height - 3
+	leftWidth := m.width / 2
+	rightWidth := m.width - leftWidth - 1
+
+	summaryHeight := contentHeight * 2 / 5
+	if summaryHeight < 3 {
+		summaryHeight = 3
+	}
+
+	m.summaryViewport.Width = leftWidth - 4
+	m.summaryViewport.Height = summaryHeight - 2
+
+	m.detailViewport.Width = rightWidth - 4
+	m.detailViewport.Height = contentHeight - 2
+
+	// Set initial detail content
+	if len(analysis.Options) > 0 {
+		m.updateDetailViewport()
+	}
+
+	return m
+}
+
+func (m Model) editAnalysisJSON() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	analysisPath := m.storage.AnalysisJSONPath(issue.ID)
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	// Reset state before opening editor
+	m.state = StateNormal
+	m.analysis = nil
+
+	cmd := exec.Command(editor, analysisPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return refreshRequestMsg{}
+	})
+}
+
+func (m Model) executeAddOption(description string) (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	if m.analysis == nil {
+		m.statusMsg = "No analysis loaded"
+		return m, nil
+	}
+
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processing[issue.ID] = "add-option"
+	m.processingLock.Unlock()
+
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
+	prompt := claude.BuildAddOptionPrompt(m.analysis, description)
+
+	m.statusMsg = fmt.Sprintf("Adding option to %s...", issue.ID)
+	m.claude.RunAsync(issue.ID, "add-option", prompt, "", sessionID, m.resultChan)
+
+	return m, nil
+}
+
+func (m Model) executePlanWithOption(issue *model.Issue) (Model, tea.Cmd) {
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processing[issue.ID] = "plan"
+	m.processingLock.Unlock()
+
+	brief, _ := m.storage.LoadBrief(issue.ID)
+	analysis, err := m.storage.LoadAnalysisJSON(issue.ID)
+	if err != nil || analysis == nil {
+		m.statusMsg = "Failed to load analysis"
+		m.processingLock.Lock()
+		delete(m.processing, issue.ID)
+		m.processingLock.Unlock()
+		return m, nil
+	}
+
+	sessionID, _ := m.storage.LoadSessionID(issue.ID)
+	prompt := claude.BuildPlanPromptWithOption(brief.Content, analysis)
+
+	m.statusMsg = fmt.Sprintf("Planning %s with selected option...", issue.ID)
+	m.claude.RunAsync(issue.ID, "plan", prompt, "", sessionID, m.resultChan)
+
+	return m, nil
 }

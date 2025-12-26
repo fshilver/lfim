@@ -1,6 +1,11 @@
 package claude
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/lunit-heesungyang/issue-manager/internal/model"
+)
 
 const readOnlyConstraints = `## System Constraints
 You are in READ-ONLY analysis mode.
@@ -148,4 +153,159 @@ Requirements:
 
 Output ONLY the commit message, no explanations.
 Do NOT wrap the output in code blocks or backticks.`, issueID, content, issueID)
+}
+
+const analysisJSONSchema = `{
+  "summary": "Brief summary of the issue and analysis",
+  "root_cause": "Root cause analysis or feature scope description",
+  "options": [
+    {
+      "id": "opt1",
+      "title": "Option title",
+      "description": "Brief description of this approach",
+      "pros": ["Advantage 1", "Advantage 2"],
+      "cons": ["Disadvantage 1", "Disadvantage 2"],
+      "recommended": true,
+      "details": "Detailed explanation in markdown format..."
+    }
+  ],
+  "risk_assessment": "Overall risk assessment and considerations"
+}`
+
+// BuildAnalysisPromptJSON builds the analysis prompt for JSON output
+func BuildAnalysisPromptJSON(briefContent, briefPath string) string {
+	return fmt.Sprintf(`%s## Task
+Analyze this issue and provide structured analysis in JSON format.
+
+Issue (%s):
+%s
+
+## Output Format
+Return a JSON object with the following structure:
+%s
+
+## Requirements
+1. Provide at least 2-3 implementation options
+2. Mark exactly ONE option as "recommended": true
+3. Each option must have at least 2 pros and 2 cons
+4. The "details" field should contain a comprehensive explanation in markdown format
+5. Do NOT wrap the JSON in code blocks - return raw JSON only
+6. Ensure valid JSON syntax (proper escaping of special characters in strings)
+
+Return ONLY the JSON object, no additional text.`, readOnlyConstraints, briefPath, briefContent, analysisJSONSchema)
+}
+
+// BuildPlanPromptWithOption builds the plan prompt with selected option context
+func BuildPlanPromptWithOption(briefContent string, analysis *model.Analysis) string {
+	selectedOption := analysis.GetSelectedOption()
+	if selectedOption == nil {
+		// Fallback to regular plan prompt if no option selected
+		analysisJSON, _ := json.MarshalIndent(analysis, "", "  ")
+		return BuildPlanPrompt(briefContent, string(analysisJSON))
+	}
+
+	return fmt.Sprintf(`%s## Task
+Create a detailed implementation plan based on the issue brief and selected approach.
+
+### Brief
+%s
+
+### Analysis Summary
+%s
+
+### Selected Approach
+**%s**: %s
+
+#### Details
+%s
+
+#### Pros
+%s
+
+#### Cons
+%s
+
+## Output Format
+Return markdown content directly. Start with the first section header.
+
+### Required Sections
+
+## Plan Summary
+- 3-5 bullet points summarizing the approach based on the SELECTED option
+
+## Implementation Tasks
+Numbered list of specific tasks:
+1. Task description
+   - File: path/to/file
+   - Changes: Description of modifications
+
+## Files Modified
+| File | Changes |
+|------|---------|
+| path/to/file | Description |
+
+## Testing Approach
+- How to verify the implementation
+
+## Risk Mitigation
+- Potential issues and how to handle them (consider the cons of the selected approach)`,
+		readOnlyConstraints,
+		briefContent,
+		analysis.Summary,
+		selectedOption.Title,
+		selectedOption.Description,
+		selectedOption.Details,
+		formatList(selectedOption.Pros),
+		formatList(selectedOption.Cons))
+}
+
+// BuildAddOptionPrompt builds the prompt for adding a custom option
+func BuildAddOptionPrompt(analysis *model.Analysis, userDescription string) string {
+	existingOptions := ""
+	for _, opt := range analysis.Options {
+		existingOptions += fmt.Sprintf("- %s: %s\n", opt.ID, opt.Title)
+	}
+
+	return fmt.Sprintf(`%s## Context
+The user is reviewing an issue analysis and wants to add a custom implementation option.
+
+### Current Analysis Summary
+%s
+
+### Existing Options
+%s
+
+### User's Description of New Option
+%s
+
+## Task
+Create a new option based on the user's description. Return a JSON object for the single option:
+
+{
+  "id": "opt_custom_N",
+  "title": "Short descriptive title",
+  "description": "Brief one-line description",
+  "pros": ["Advantage 1", "Advantage 2", "..."],
+  "cons": ["Disadvantage 1", "Disadvantage 2", "..."],
+  "recommended": false,
+  "details": "Detailed markdown explanation of this approach..."
+}
+
+## Requirements
+1. Generate a unique ID (e.g., "opt_custom_1" if no custom options exist)
+2. Provide at least 2 pros and 2 cons
+3. Set "recommended": false (user will choose if they want this option)
+4. The "details" field should be comprehensive
+5. Do NOT wrap the JSON in code blocks - return raw JSON only
+
+Return ONLY the JSON object for this single option.`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription)
+}
+
+// formatList formats a slice of strings as a bulleted list
+func formatList(items []string) string {
+	result := ""
+	for _, item := range items {
+		result += fmt.Sprintf("- %s\n", item)
+	}
+	return result
 }

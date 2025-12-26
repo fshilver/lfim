@@ -66,6 +66,10 @@ func (s *Storage) VersionTrackerPath(issueID string) string {
 	return filepath.Join(s.IssueDir(issueID), ".analysis_version")
 }
 
+func (s *Storage) AnalysisJSONPath(issueID string) string {
+	return filepath.Join(s.IssueDir(issueID), "analysis.json")
+}
+
 // LoadIndex loads the issue index from index.yaml
 func (s *Storage) LoadIndex() (*model.IssueIndex, error) {
 	data, err := os.ReadFile(s.IndexPath())
@@ -391,4 +395,53 @@ func (s *Storage) issueFromMap(m map[string]interface{}) (*model.Issue, error) {
 	}
 
 	return issue, nil
+}
+
+// AnalysisJSONExists checks if analysis.json exists for an issue
+func (s *Storage) AnalysisJSONExists(issueID string) bool {
+	_, err := os.Stat(s.AnalysisJSONPath(issueID))
+	return err == nil
+}
+
+// SaveAnalysisJSON saves analysis.json for an issue
+func (s *Storage) SaveAnalysisJSON(issueID string, analysis *model.Analysis) error {
+	data, err := analysis.ToJSON()
+	if err != nil {
+		return fmt.Errorf("marshaling analysis: %w", err)
+	}
+	path := s.AnalysisJSONPath(issueID)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("writing analysis.json: %w", err)
+	}
+	return nil
+}
+
+// LoadAnalysisJSON loads analysis.json for an issue
+func (s *Storage) LoadAnalysisJSON(issueID string) (*model.Analysis, error) {
+	path := s.AnalysisJSONPath(issueID)
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading analysis.json: %w", err)
+	}
+	return model.ParseAnalysis(data)
+}
+
+// UpdateSelectedOption updates the selected option in analysis.json
+func (s *Storage) UpdateSelectedOption(issueID, optionID string) error {
+	analysis, err := s.LoadAnalysisJSON(issueID)
+	if err != nil {
+		return err
+	}
+	if analysis == nil {
+		return fmt.Errorf("analysis.json not found for issue %s", issueID)
+	}
+
+	if err := analysis.SetSelectedOption(optionID); err != nil {
+		return err
+	}
+
+	return s.SaveAnalysisJSON(issueID, analysis)
 }

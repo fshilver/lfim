@@ -4,24 +4,27 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all keyboard shortcuts
 type KeyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	New        key.Binding
-	Edit       key.Binding
-	Close      key.Binding
-	Discard    key.Binding
-	Analyze    key.Binding
-	Plan       key.Binding
-	Review     key.Binding
-	PlanReview key.Binding
-	Implement  key.Binding
-	Refresh    key.Binding
-	Filter     key.Binding
-	Quit       key.Binding
-	Enter      key.Binding
-	Escape     key.Binding
-	Yes        key.Binding
-	No         key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	New           key.Binding
+	Edit          key.Binding
+	Close         key.Binding
+	Discard       key.Binding
+	Analyze       key.Binding
+	Plan          key.Binding
+	Review        key.Binding
+	PlanReview    key.Binding
+	Implement     key.Binding
+	Refresh       key.Binding
+	Filter        key.Binding
+	Quit          key.Binding
+	Enter         key.Binding
+	Escape        key.Binding
+	Yes           key.Binding
+	No            key.Binding
+	AddOption     key.Binding
+	ConfirmOption key.Binding
+	SelectOption  key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -94,6 +97,18 @@ func DefaultKeyMap() KeyMap {
 		),
 		No: key.NewBinding(
 			key.WithKeys("n", "N"),
+		),
+		AddOption: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "add option"),
+		),
+		ConfirmOption: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("↵", "confirm"),
+		),
+		SelectOption: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "select"),
 		),
 	}
 }

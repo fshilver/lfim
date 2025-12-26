@@ -157,3 +157,82 @@ var OverlayStyles = struct {
 	Separator: lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")),
 }
+
+// OptionSelectStyles defines styles for option selection screen
+var OptionSelectStyles = struct {
+	// Panel styles
+	LeftPanel      lipgloss.Style
+	RightPanel     lipgloss.Style
+	PanelTitle     lipgloss.Style
+	PanelBorder    lipgloss.Style
+	SummaryContent lipgloss.Style
+
+	// Option list styles
+	OptionCursor      lipgloss.Style
+	OptionNormal      lipgloss.Style
+	OptionRecommended lipgloss.Style
+	OptionSelected    lipgloss.Style
+	CheckboxChecked   string
+	CheckboxUnchecked string
+	RecommendedBadge  string
+
+	// Detail panel styles
+	DetailTitle       lipgloss.Style
+	DetailDescription lipgloss.Style
+	ProLabel          lipgloss.Style
+	ConLabel          lipgloss.Style
+	ProItem           lipgloss.Style
+	ConItem           lipgloss.Style
+}{
+	LeftPanel: lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderRight(true).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1),
+	RightPanel: lipgloss.NewStyle().
+		Padding(0, 1),
+	PanelTitle: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212")).
+		MarginBottom(1),
+	PanelBorder: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")),
+	SummaryContent: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")),
+
+	OptionCursor: lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
+		Bold(true),
+	OptionNormal: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")),
+	OptionRecommended: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("214")).
+		Bold(true),
+	OptionSelected: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("46")).
+		Bold(true),
+	CheckboxChecked:   "◉",
+	CheckboxUnchecked: "○",
+	RecommendedBadge:  "★",
+
+	DetailTitle: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212")).
+		MarginBottom(1),
+	DetailDescription: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		MarginBottom(1),
+	ProLabel: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("46")),
+	ConLabel: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("196")),
+	ProItem: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		PaddingLeft(2),
+	ConItem: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		PaddingLeft(2),
+}
