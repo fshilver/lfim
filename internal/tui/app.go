@@ -18,6 +18,7 @@ import (
 	"github.com/lunit-heesungyang/issue-manager/internal/claude"
 	"github.com/lunit-heesungyang/issue-manager/internal/model"
 	"github.com/lunit-heesungyang/issue-manager/internal/storage"
+	"github.com/lunit-heesungyang/issue-manager/internal/ui"
 )
 
 // FilterMode represents the current filter setting
@@ -273,7 +274,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		m.spinnerFrame = (m.spinnerFrame + 1) % len(SpinnerFrames)
+		m.spinnerFrame = (m.spinnerFrame + 1) % len(ui.SpinnerFrames)
 		cmds = append(cmds, m.tickCmd())
 
 	case issuesLoadedMsg:
@@ -1116,7 +1117,7 @@ func (m Model) renderList(width, height int) string {
 			m.processingLock.Unlock()
 
 			if isProcessing {
-				icon = SpinnerFrames[m.spinnerFrame]
+				icon = ui.SpinnerFrames[m.spinnerFrame]
 			} else {
 				icon = issue.StatusIcon()
 			}
@@ -1277,9 +1278,9 @@ func (m Model) renderConfirmOverlay() string {
 func (m Model) renderTypeSelectOverlay() string {
 	// Build options with icons on separate lines
 	options := fmt.Sprintf("  [f] Feature   %s\n  [b] Bug       %s\n  [r] Refactor  %s",
-		OverlayIcons.Feature,
-		OverlayIcons.Bug,
-		OverlayIcons.Refactor,
+		model.TypeFeature.Icon(),
+		model.TypeBug.Icon(),
+		model.TypeRefactor.Icon(),
 	)
 
 	// Footer with cancel hint
@@ -1393,7 +1394,7 @@ func (m Model) renderCommitConfirmOverlay() string {
 }
 
 func (m Model) renderCommitGeneratingOverlay() string {
-	spinner := SpinnerFrames[m.spinnerFrame]
+	spinner := ui.SpinnerFrames[m.spinnerFrame]
 
 	// Build title with issue info
 	title := "Closing Issue"

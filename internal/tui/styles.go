@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/lunit-heesungyang/issue-manager/internal/ui"
+)
 
 // Styles defines all visual styles for the TUI
 type Styles struct {
@@ -43,85 +46,66 @@ func DefaultStyles() Styles {
 		PreviewPanel: lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderLeft(true).
-			BorderForeground(lipgloss.Color("240")).
+			BorderForeground(ui.ColorBorder).
 			Padding(0, 1),
 
 		Header: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("212")).
+			Foreground(ui.ColorPrimary).
 			Padding(0, 1),
 
 		Footer: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
+			Foreground(ui.ColorBorder).
 			Padding(0, 1),
 
 		StatusBar: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214")).
+			Foreground(ui.ColorWarning).
 			Padding(0, 1),
 
 		SelectedItem: lipgloss.NewStyle().
-			Background(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("230")),
+			Background(ui.ColorSecondary).
+			Foreground(ui.ColorTextLight),
 
 		NormalItem: lipgloss.NewStyle(),
 
 		ProcessingItem: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214")),
+			Foreground(ui.ColorWarning),
 
 		PreviewTitle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("212")),
+			Foreground(ui.ColorPrimary),
 
 		PreviewBorder: lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()),
 
 		PopupBorder: lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
+			BorderForeground(ui.ColorSecondary).
 			Padding(1, 2),
 
 		PopupTitle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("212")),
+			Foreground(ui.ColorPrimary),
 
 		InputPrompt: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212")),
+			Foreground(ui.ColorPrimary),
 
 		InputText: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255")),
+			Foreground(ui.ColorTextWhite),
 	}
 }
 
-// Status icons for each issue status
-var StatusIcons = map[string]string{
-	"open":        "○",
-	"analyzed":    "◐",
-	"planned":     "●",
-	"implemented": "◉",
-	"closed":      "✓",
-	"invalid":     "✗",
-}
-
-// Spinner frames for processing animation
-var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 // OverlayIcons defines icons used in overlay popups
 var OverlayIcons = struct {
-	Feature  string
-	Bug      string
-	Refactor string
-	Confirm  string
-	Success  string
-	Input    string
-	Commit   string
+	Confirm string
+	Success string
+	Input   string
+	Commit  string
 }{
-	Feature:  "💡",
-	Bug:      "💥",
-	Refactor: "🔧",
-	Confirm:  "⚠️ ",
-	Success:  "✓",
-	Input:    "✎",
-	Commit:   "📝",
+	Confirm: ui.IconConfirm,
+	Success: ui.IconSuccess,
+	Input:   ui.IconInput,
+	Commit:  ui.IconCommit,
 }
 
 // OverlayStyles defines styles for overlay popups
@@ -137,26 +121,26 @@ var OverlayStyles = struct {
 }{
 	Container: lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(ui.ColorSecondary).
 		Padding(1, 2),
 	Title: lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("212")).
+		Foreground(ui.ColorPrimary).
 		MarginBottom(1),
 	Content: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")),
+		Foreground(ui.ColorText),
 	Footer: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
+		Foreground(ui.ColorMuted).
 		MarginTop(1),
 	Hint: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")),
+		Foreground(ui.ColorMuted),
 	Selected: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("212")).
+		Foreground(ui.ColorPrimary).
 		Bold(true),
 	Option: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")),
+		Foreground(ui.ColorText),
 	Separator: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")),
+		Foreground(ui.ColorBorder),
 }
 
 // OptionSelectStyles defines styles for option selection screen
@@ -188,52 +172,52 @@ var OptionSelectStyles = struct {
 	LeftPanel: lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderRight(true).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(ui.ColorBorder).
 		Padding(0, 1),
 	RightPanel: lipgloss.NewStyle().
 		Padding(0, 1),
 	PanelTitle: lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("212")).
+		Foreground(ui.ColorPrimary).
 		MarginBottom(1),
 	PanelBorder: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")),
+		Foreground(ui.ColorBorder),
 	SummaryContent: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")),
+		Foreground(ui.ColorText),
 
 	OptionCursor: lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
+		Background(ui.ColorSecondary).
+		Foreground(ui.ColorTextLight).
 		Bold(true),
 	OptionNormal: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")),
+		Foreground(ui.ColorText),
 	OptionRecommended: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214")).
+		Foreground(ui.ColorWarning).
 		Bold(true),
 	OptionSelected: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("46")).
+		Foreground(ui.ColorSuccess).
 		Bold(true),
-	CheckboxChecked:   "◉",
-	CheckboxUnchecked: "○",
-	RecommendedBadge:  "★",
+	CheckboxChecked:   ui.IconCheckboxChecked,
+	CheckboxUnchecked: ui.IconCheckboxUnchecked,
+	RecommendedBadge:  ui.IconRecommendedBadge,
 
 	DetailTitle: lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("212")).
+		Foreground(ui.ColorPrimary).
 		MarginBottom(1),
 	DetailDescription: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
+		Foreground(ui.ColorText).
 		MarginBottom(1),
 	ProLabel: lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("46")),
+		Foreground(ui.ColorSuccess),
 	ConLabel: lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("196")),
+		Foreground(ui.ColorError),
 	ProItem: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
+		Foreground(ui.ColorText).
 		PaddingLeft(2),
 	ConItem: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
+		Foreground(ui.ColorText).
 		PaddingLeft(2),
 }

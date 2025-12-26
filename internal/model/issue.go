@@ -2,6 +2,8 @@ package model
 
 import (
 	"time"
+
+	"github.com/lunit-heesungyang/issue-manager/internal/ui"
 )
 
 // IssueStatus represents the lifecycle status of an issue
@@ -39,13 +41,13 @@ const (
 func (t IssueType) Icon() string {
 	switch t {
 	case TypeFeature:
-		return "💡"
+		return ui.IconTypeFeature
 	case TypeBug:
-		return "💥"
+		return ui.IconTypeBug
 	case TypeRefactor:
-		return "🔧"
+		return ui.IconTypeRefactor
 	default:
-		return "❓"
+		return ui.IconTypeUnknown
 	}
 }
 
@@ -89,18 +91,18 @@ func (i *Issue) ToFrontmatter() map[string]interface{} {
 func (i *Issue) StatusIcon() string {
 	switch i.Status {
 	case StatusOpen:
-		return "○"
+		return ui.IconStatusOpen
 	case StatusAnalyzed:
-		return "◐"
+		return ui.IconStatusAnalyzed
 	case StatusPlanned:
-		return "●"
+		return ui.IconStatusPlanned
 	case StatusImplemented:
-		return "◉"
+		return ui.IconStatusImplemented
 	case StatusClosed:
-		return "✓"
+		return ui.IconStatusClosed
 	case StatusInvalid:
-		return "✗"
+		return ui.IconStatusInvalid
 	default:
-		return "?"
+		return ui.IconStatusUnknown
 	}
 }
