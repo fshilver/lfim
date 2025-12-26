@@ -785,10 +785,7 @@ func (m *Model) handleResult(result claude.TaskResult) {
 						_ = m.storage.SaveSessionID(result.IssueID, result.SessionID)
 					}
 					_ = m.storage.UpdateIssueStatus(result.IssueID, model.StatusAnalyzed, "")
-					m.statusMsg = fmt.Sprintf("Analyzed %s - select option with R", result.IssueID)
-
-					// Enter option select state
-					*m = m.enterOptionSelectState(analysis)
+					m.statusMsg = fmt.Sprintf("Analyzed %s - press R to review options", result.IssueID)
 					return
 				}
 			}
