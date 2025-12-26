@@ -445,3 +445,22 @@ func (s *Storage) UpdateSelectedOption(issueID, optionID string) error {
 
 	return s.SaveAnalysisJSON(issueID, analysis)
 }
+
+// AppendChangeLog appends a change log entry to plan.md
+func (s *Storage) AppendChangeLog(issueID, changeLogEntry string) error {
+	planPath := s.PlanPath(issueID)
+	currentPlan, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("reading plan.md: %w", err)
+	}
+
+	// Append the change log entry to the end of the file
+	updatedPlan := string(currentPlan) + "\n" + changeLogEntry
+
+	if err := os.WriteFile(planPath, []byte(updatedPlan), 0644); err != nil {
+		return fmt.Errorf("writing plan.md: %w", err)
+	}
+
+	s.gitAdd(planPath)
+	return nil
+}

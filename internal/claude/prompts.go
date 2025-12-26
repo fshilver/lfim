@@ -75,7 +75,14 @@ Numbered list of specific tasks:
 - How to verify the implementation
 
 ## Risk Mitigation
-- Potential issues and how to handle them`, readOnlyConstraints, briefContent, analysisContent)
+- Potential issues and how to handle them
+
+---
+
+## Change Log
+
+### [Initial Plan]
+- Plan created based on analysis`, readOnlyConstraints, briefContent, analysisContent)
 }
 
 // BuildReviewPrompt builds the review/refinement prompt
@@ -248,7 +255,14 @@ Numbered list of specific tasks:
 - How to verify the implementation
 
 ## Risk Mitigation
-- Potential issues and how to handle them (consider the cons of the selected approach)`,
+- Potential issues and how to handle them (consider the cons of the selected approach)
+
+---
+
+## Change Log
+
+### [Initial Plan]
+- Plan created based on selected option: %s`,
 		readOnlyConstraints,
 		briefContent,
 		analysis.Summary,
@@ -256,7 +270,8 @@ Numbered list of specific tasks:
 		selectedOption.Description,
 		selectedOption.Details,
 		formatList(selectedOption.Pros),
-		formatList(selectedOption.Cons))
+		formatList(selectedOption.Cons),
+		selectedOption.Title)
 }
 
 // BuildAddOptionPrompt builds the prompt for adding a custom option
@@ -299,6 +314,38 @@ Create a new option based on the user's description. Return a JSON object for th
 5. Do NOT wrap the JSON in code blocks - return raw JSON only
 
 Return ONLY the JSON object for this single option.`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription)
+}
+
+// BuildChangeLogPrompt builds the prompt for generating a change log entry
+func BuildChangeLogPrompt(planContent, gitDiff, changeReason string) string {
+	return fmt.Sprintf(`%s## Context
+You are analyzing the difference between an implementation plan and the actual implementation.
+
+### Original Plan
+%s
+
+### Git Diff (actual changes made)
+%s
+
+### User's Description of Changes (optional)
+%s
+
+## Task
+Generate a Change Log entry that documents the deviations from the original plan.
+Focus on MEANINGFUL differences - not cosmetic changes or minor implementation details.
+
+## Output Format
+Return ONLY the Change Log entry in this exact format (no additional text):
+
+### [%s] Implementation Update
+- **Changes Made**: [List the actual changes that deviated from the plan]
+- **Reason**: [Explain why the changes were necessary]
+- **Affected Files**: [List files that were changed differently than planned]
+
+Important:
+- If there are no significant deviations from the plan, return: "No significant deviations from plan."
+- Be concise but informative
+- Focus on the "why" not just the "what"`, readOnlyConstraints, planContent, gitDiff, changeReason, "{{DATE}}")
 }
 
 // formatList formats a slice of strings as a bulleted list

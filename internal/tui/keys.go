@@ -15,6 +15,7 @@ type KeyMap struct {
 	Review        key.Binding
 	PlanReview    key.Binding
 	Implement     key.Binding
+	UpdateLog     key.Binding
 	Refresh       key.Binding
 	Filter        key.Binding
 	Quit          key.Binding
@@ -74,6 +75,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("i"),
 			key.WithHelp("i", "implement"),
 		),
+		UpdateLog: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "update-log"),
+		),
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
@@ -115,7 +120,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns keybindings to be shown in the mini help view
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.New, k.Analyze, k.Review, k.Plan, k.PlanReview, k.Implement, k.Close, k.Discard, k.Edit, k.Filter, k.Quit}
+	return []key.Binding{k.New, k.Analyze, k.Review, k.Plan, k.PlanReview, k.Implement, k.UpdateLog, k.Close, k.Discard, k.Edit, k.Filter, k.Quit}
 }
 
 // FullHelp returns keybindings for the expanded help view
@@ -123,7 +128,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.New, k.Edit},
 		{k.Analyze, k.Plan, k.Review, k.PlanReview},
-		{k.Implement, k.Close, k.Discard, k.Filter},
-		{k.Refresh, k.Quit},
+		{k.Implement, k.UpdateLog, k.Close, k.Discard},
+		{k.Filter, k.Refresh, k.Quit},
 	}
 }

@@ -75,3 +75,32 @@ func (s *Storage) GitStatus() string {
 	}
 	return string(output)
 }
+
+// GetGitDiff returns the git diff for the current branch compared to HEAD~1
+// This captures changes made during implementation
+func (s *Storage) GetGitDiff() string {
+	// First try to get diff of staged changes
+	cmd := exec.Command("git", "diff", "--cached")
+	cmd.Dir = s.ProjectRoot
+	output, err := cmd.Output()
+	if err == nil && strings.TrimSpace(string(output)) != "" {
+		return string(output)
+	}
+
+	// If no staged changes, get diff of all changes
+	cmd = exec.Command("git", "diff")
+	cmd.Dir = s.ProjectRoot
+	output, err = cmd.Output()
+	if err == nil && strings.TrimSpace(string(output)) != "" {
+		return string(output)
+	}
+
+	// If still no diff, try to get last commit diff
+	cmd = exec.Command("git", "diff", "HEAD~1", "HEAD")
+	cmd.Dir = s.ProjectRoot
+	output, err = cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return string(output)
+}

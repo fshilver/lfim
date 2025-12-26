@@ -66,6 +66,7 @@ const (
 	InputReview
 	InputPlanReview
 	InputAddOption
+	InputChangeReason
 )
 
 // Model is the main Bubble Tea model
@@ -394,6 +395,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Implement):
 		return m.implementIssue()
 
+	case key.Matches(msg, m.keys.UpdateLog):
+		return m.updateChangeLog()
+
 	case key.Matches(msg, m.keys.Refresh):
 		m.statusMsg = "Refreshed"
 		return m, m.refreshIssues()
@@ -484,6 +488,10 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = StateOptionSelect
 			m.inputMode = InputNone
 			return m.executeAddOption(value)
+		case InputChangeReason:
+			m.state = StateNormal
+			m.inputMode = InputNone
+			return m.executeUpdateChangeLog(value)
 		default:
 			m.state = StateNormal
 			return m, nil
@@ -509,6 +517,13 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = StateOptionSelect
 			m.inputMode = InputNone
 			m.textInput.Reset()
+			return m, nil
+		}
+		if m.inputMode == InputChangeReason {
+			m.state = StateNormal
+			m.inputMode = InputNone
+			m.textInput.Reset()
+			m.statusMsg = "Change log update cancelled"
 			return m, nil
 		}
 		m.state = StateNormal
@@ -860,6 +875,20 @@ func (m *Model) handleResult(result claude.TaskResult) {
 			m.pendingCloseIssue = nil
 			m.statusMsg = fmt.Sprintf("Commit message generation failed: %s", result.IssueID)
 		}
+	case "update-changelog":
+		if result.Success {
+			changeLogEntry := strings.TrimSpace(result.Result)
+			// Replace {{DATE}} with actual date
+			changeLogEntry = strings.ReplaceAll(changeLogEntry, "{{DATE}}", time.Now().Format("2006-01-02"))
+			// Append the change log to plan.md
+			if err := m.storage.AppendChangeLog(result.IssueID, changeLogEntry); err != nil {
+				m.statusMsg = fmt.Sprintf("Failed to update plan.md: %v", err)
+			} else {
+				m.statusMsg = fmt.Sprintf("Change log updated for %s", result.IssueID)
+			}
+		} else {
+			m.statusMsg = fmt.Sprintf("Change log generation failed: %s", result.IssueID)
+		}
 	}
 }
 
@@ -911,7 +940,7 @@ func (m Model) View() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, previewPanel)
 
 	// Render footer
-	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [i]mplement [c]lose [d]iscard [e]dit [f]ilter [q]uit ←→scroll"
+	keys := "[n]ew [a]nalyze [R]eview [p]lan [P]lan-review [i]mplement [u]pdate-log [c]lose [d]iscard [e]dit [f]ilter [q]uit"
 	footer := m.styles.Footer.Render(keys)
 	status := m.styles.StatusBar.Render(m.statusMsg)
 
@@ -1212,6 +1241,8 @@ func (m Model) renderInputOverlay() string {
 		title = "Review Feedback"
 	case InputPlanReview:
 		title = "Plan Feedback"
+	case InputChangeReason:
+		title = "Update Change Log"
 	default:
 		title = "Input"
 	}
@@ -1989,6 +2020,74 @@ func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return implementCompletedMsg{issueID: issueID}
 	})
+}
+
+func (m Model) updateChangeLog() (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	// Only implemented issues can have change logs updated
+	if issue.Status != model.StatusImplemented {
+		m.statusMsg = "Only implemented issues can have change logs updated"
+		return m, nil
+	}
+
+	// Check if plan exists
+	if !m.storage.PlanExists(issue.ID) {
+		m.statusMsg = "No plan.md found"
+		return m, nil
+	}
+
+	// Prompt user for optional change reason
+	m.state = StateInput
+	m.inputMode = InputChangeReason
+	m.inputPrompt = "Change reason (optional, press Enter to auto-detect): "
+	m.textInput.Focus()
+	return m, textinput.Blink
+}
+
+func (m Model) executeUpdateChangeLog(changeReason string) (Model, tea.Cmd) {
+	issue := m.getSelectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+
+	m.processingLock.Lock()
+	if _, ok := m.processing[issue.ID]; ok {
+		m.processingLock.Unlock()
+		m.statusMsg = fmt.Sprintf("%s is already processing", issue.ID)
+		return m, nil
+	}
+	m.processing[issue.ID] = "update-changelog"
+	m.processingLock.Unlock()
+
+	// Load plan.md
+	planContent, err := m.storage.LoadPlan(issue.ID)
+	if err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to load plan: %v", err)
+		return m, nil
+	}
+
+	// Get git diff
+	gitDiff := m.storage.GetGitDiff()
+	if gitDiff == "" {
+		m.statusMsg = "No git changes detected"
+		m.processingLock.Lock()
+		delete(m.processing, issue.ID)
+		m.processingLock.Unlock()
+		return m, nil
+	}
+
+	// Build prompt and run Claude
+	prompt := claude.BuildChangeLogPrompt(planContent, gitDiff, changeReason)
+	m.statusMsg = fmt.Sprintf("Generating change log for %s...", issue.ID)
+	m.claude.RunAsync(issue.ID, "update-changelog", prompt, "haiku", "", m.resultChan)
+
+	return m, nil
 }
 
 func (m Model) getSelectedIssue() *model.Issue {
