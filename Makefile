@@ -54,7 +54,7 @@ clean:
 # Install binary to GOPATH/bin
 install: build
 	@echo "Installing $(BINARY_NAME)..."
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(HOME)/bin/
 
 # Build for multiple platforms
 build-all: clean
