@@ -94,11 +94,12 @@ func DefaultStyles() Styles {
 
 // Status icons for each issue status
 var StatusIcons = map[string]string{
-	"open":     "○",
-	"analyzed": "◐",
-	"planned":  "●",
-	"closed":   "✓",
-	"invalid":  "✗",
+	"open":        "○",
+	"analyzed":    "◐",
+	"planned":     "●",
+	"implemented": "◉",
+	"closed":      "✓",
+	"invalid":     "✗",
 }
 
 // Spinner frames for processing animation

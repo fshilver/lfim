@@ -209,6 +209,11 @@ type syncAfterEditMsg struct {
 	issueID string
 }
 
+// implementCompletedMsg triggers status update after implementation completes
+type implementCompletedMsg struct {
+	issueID string
+}
+
 func (m Model) refreshIssues() tea.Cmd {
 	return func() tea.Msg {
 		idx, err := m.storage.LoadIndex()
@@ -223,6 +228,7 @@ func (m Model) refreshIssues() tea.Cmd {
 				model.StatusOpen,
 				model.StatusAnalyzed,
 				model.StatusPlanned,
+				model.StatusImplemented,
 			)
 		case FilterAll:
 			filtered = idx.Issues
@@ -296,6 +302,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case syncAfterEditMsg:
 		// Sync brief.md changes to index.yaml
 		_ = m.storage.SyncBriefToIndex(msg.issueID)
+		return m, m.refreshIssues()
+
+	case implementCompletedMsg:
+		// Update status to implemented after implementation completes
+		_ = m.storage.UpdateIssueStatus(msg.issueID, model.StatusImplemented, "")
+		m.statusMsg = fmt.Sprintf("Implemented %s", msg.issueID)
 		return m, m.refreshIssues()
 	}
 
@@ -1975,8 +1987,9 @@ func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
 
 	m.statusMsg = fmt.Sprintf("Implementing %s...", issue.ID)
 
+	issueID := issue.ID
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return refreshRequestMsg{}
+		return implementCompletedMsg{issueID: issueID}
 	})
 }
 

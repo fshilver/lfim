@@ -8,11 +8,12 @@ import (
 type IssueStatus string
 
 const (
-	StatusOpen     IssueStatus = "open"
-	StatusAnalyzed IssueStatus = "analyzed"
-	StatusPlanned  IssueStatus = "planned"
-	StatusClosed   IssueStatus = "closed"
-	StatusInvalid  IssueStatus = "invalid"
+	StatusOpen        IssueStatus = "open"
+	StatusAnalyzed    IssueStatus = "analyzed"
+	StatusPlanned     IssueStatus = "planned"
+	StatusImplemented IssueStatus = "implemented"
+	StatusClosed      IssueStatus = "closed"
+	StatusInvalid     IssueStatus = "invalid"
 )
 
 // IsActive returns true if the status is not closed or invalid
@@ -93,6 +94,8 @@ func (i *Issue) StatusIcon() string {
 		return "◐"
 	case StatusPlanned:
 		return "●"
+	case StatusImplemented:
+		return "◉"
 	case StatusClosed:
 		return "✓"
 	case StatusInvalid:
