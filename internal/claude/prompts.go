@@ -125,7 +125,11 @@ Do NOT wrap output in code blocks.`, readOnlyConstraints, planPath, feedback)
 
 // BuildImplementPrompt builds the implementation prompt for interactive mode
 func BuildImplementPrompt(planPath string) string {
-	return fmt.Sprintf(`Implement the plan in %s.`, planPath)
+	return fmt.Sprintf(`IMPORTANT: The plan file may have been edited since your last read.
+First, re-read %s from disk to get the latest version before implementing.
+
+Then implement all tasks in the plan in order.
+After each significant change, verify it works correctly.`, planPath)
 }
 
 // BuildCommitMessagePrompt builds the commit message prompt
