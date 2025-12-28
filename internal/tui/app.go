@@ -55,6 +55,7 @@ const (
 	StateCommitConfirm
 	StateCommitGenerating
 	StateOptionSelect
+	StateModelSelect
 )
 
 // InputMode represents what input is being collected
@@ -67,6 +68,15 @@ const (
 	InputPlanReview
 	InputAddOption
 	InputChangeReason
+)
+
+// AIModel represents the AI model to use for implementation
+type AIModel string
+
+const (
+	ModelOpus   AIModel = "opus"
+	ModelSonnet AIModel = "sonnet"
+	ModelHaiku  AIModel = "haiku"
 )
 
 // Model is the main Bubble Tea model
@@ -127,7 +137,6 @@ type Model struct {
 
 	// Retry confirmation state
 	pendingRetryIssue *model.Issue
-	pendingImplement  bool
 
 	// List scroll state
 	listVOffset      int // vertical scroll offset for issue list
@@ -144,6 +153,10 @@ type Model struct {
 
 	// View-only mode for closed issues
 	isViewOnly bool // true when viewing closed/invalid issues in review mode
+
+	// Model selection state
+	pendingModel AIModel // selected model for implementation
+	modelCursor  int     // cursor position in model list (0=opus, 1=sonnet, 2=haiku)
 }
 
 // New creates a new TUI model
@@ -327,6 +340,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case StateTypeSelect:
 		return m.handleTypeSelectKey(msg)
+	case StateModelSelect:
+		return m.handleModelSelectKey(msg)
 	case StateReviewPreview:
 		return m.handleReviewPreviewKey(msg)
 	case StatePlanPreview:
@@ -546,15 +561,7 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Yes):
 		m.state = StateNormal
 
-		// Handle pending implement (needs to return tea.Cmd for tea.ExecProcess)
-		if m.pendingImplement && m.pendingRetryIssue != nil {
-			issue := m.pendingRetryIssue
-			m.pendingRetryIssue = nil
-			m.pendingImplement = false
-			return m.executeImplementFor(issue)
-		}
-
-		// Handle other confirm actions
+		// Handle confirm actions
 		if m.confirmAction != nil {
 			m.confirmAction()
 		}
@@ -564,7 +571,6 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Escape):
 		m.state = StateNormal
 		m.pendingRetryIssue = nil
-		m.pendingImplement = false
 		m.statusMsg = "Cancelled"
 		return m, nil
 	}
@@ -582,6 +588,41 @@ func (m Model) handleTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.createIssue(model.TypeRefactor)
 	case "esc":
 		m.state = StateNormal
+		m.statusMsg = "Cancelled"
+	}
+	return m, nil
+}
+
+func (m Model) handleModelSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	models := []AIModel{ModelOpus, ModelSonnet, ModelHaiku}
+
+	switch msg.String() {
+	case "o", "1":
+		m.pendingModel = ModelOpus
+		m.modelCursor = 0
+	case "s", "2":
+		m.pendingModel = ModelSonnet
+		m.modelCursor = 1
+	case "h", "3":
+		m.pendingModel = ModelHaiku
+		m.modelCursor = 2
+	case "up", "k":
+		m.modelCursor = (m.modelCursor - 1 + 3) % 3
+		m.pendingModel = models[m.modelCursor]
+	case "down", "j":
+		m.modelCursor = (m.modelCursor + 1) % 3
+		m.pendingModel = models[m.modelCursor]
+	case "enter":
+		// Directly execute implementation - no confirm step
+		issue := m.pendingRetryIssue
+		m.pendingRetryIssue = nil
+		m.state = StateNormal
+		return m.executeImplementFor(issue)
+	case "esc", "q":
+		m.state = StateNormal
+		m.pendingRetryIssue = nil
+		m.pendingModel = ""
+		m.modelCursor = 0
 		m.statusMsg = "Cancelled"
 	}
 	return m, nil
@@ -979,6 +1020,8 @@ func (m Model) View() string {
 		overlay = m.renderConfirmOverlay()
 	case StateTypeSelect:
 		overlay = m.renderTypeSelectOverlay()
+	case StateModelSelect:
+		overlay = m.renderModelSelectOverlay()
 	case StateReviewPreview:
 		overlay = m.renderReviewPreviewOverlay()
 	case StatePlanPreview:
@@ -1341,6 +1384,40 @@ func (m Model) renderTypeSelectOverlay() string {
 	footer := "[Esc] Cancel"
 
 	return m.renderBaseOverlay("Select Issue Type", options, footer, 40)
+}
+
+func (m Model) renderModelSelectOverlay() string {
+	issueID := ""
+	if m.pendingRetryIssue != nil {
+		issueID = m.pendingRetryIssue.ID
+	}
+
+	// Cursor indicator function
+	cursor := func(idx int) string {
+		if m.modelCursor == idx {
+			return "► "
+		}
+		return "  "
+	}
+
+	// Build options with cursor indicator
+	options := fmt.Sprintf(
+		"%s[o] Opus   - Highest quality, slower\n"+
+			"%s[s] Sonnet - Balanced performance\n"+
+			"%s[h] Haiku  - Fast, cost-effective (Default)",
+		cursor(0), cursor(1), cursor(2),
+	)
+
+	// Warning about code modification
+	content := options + "\n\nThis will modify code files."
+
+	// Footer with navigation hints
+	footer := "[Enter] Start    [j/k] Navigate    [Esc] Cancel"
+
+	// Header includes issue ID for context
+	header := fmt.Sprintf("Implement %s - Select Model", issueID)
+
+	return m.renderBaseOverlay(header, content, footer, 50)
 }
 
 func (m Model) renderReviewPreviewOverlay() string {
@@ -2017,12 +2094,11 @@ func (m Model) implementIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Implement always requires confirmation as it may modify code
-	m.state = StateConfirm
-	m.confirmMsg = fmt.Sprintf("Implement %s? This may modify code.", issue.ID)
+	// Go to model selection (model selection serves as implicit confirmation)
+	m.state = StateModelSelect
 	m.pendingRetryIssue = issue
-	m.pendingImplement = true
-	m.confirmAction = nil // Will be handled specially in handleConfirmKey
+	m.pendingModel = ModelHaiku // default to fastest model
+	m.modelCursor = 2          // haiku index
 	return m, nil
 }
 
@@ -2034,13 +2110,22 @@ func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
 	planPath := m.storage.PlanPath(issue.ID)
 	prompt := claude.BuildImplementPrompt(planPath)
 
-	cmd := exec.Command("claude", "--resume", sessionID, "--permission-mode", "acceptEdits", prompt)
+	// Build command with model flag
+	args := []string{"--resume", sessionID}
+	if m.pendingModel != "" {
+		args = append(args, "--model", string(m.pendingModel))
+	}
+	args = append(args, "--permission-mode", "acceptEdits", prompt)
+
+	cmd := exec.Command("claude", args...)
 	cmd.Dir = m.claude.WorkingDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	m.statusMsg = fmt.Sprintf("Implementing %s...", issue.ID)
+	selectedModel := m.pendingModel
+	m.statusMsg = fmt.Sprintf("Implementing %s with %s...", issue.ID, selectedModel)
+	m.pendingModel = "" // reset after use
 
 	issueID := issue.ID
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
