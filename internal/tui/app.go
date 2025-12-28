@@ -2034,7 +2034,7 @@ func (m Model) executeImplementFor(issue *model.Issue) (Model, tea.Cmd) {
 	planPath := m.storage.PlanPath(issue.ID)
 	prompt := claude.BuildImplementPrompt(planPath)
 
-	cmd := exec.Command("claude", "--resume", sessionID, prompt)
+	cmd := exec.Command("claude", "--resume", sessionID, "--permission-mode", "acceptEdits", prompt)
 	cmd.Dir = m.claude.WorkingDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
