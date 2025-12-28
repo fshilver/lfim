@@ -813,8 +813,8 @@ func (m *Model) handleResult(result claude.TaskResult) {
 	case "analyze":
 		if result.Success {
 			// Try to parse as JSON first
-			analysis, err := storage.ParseAnalysisFromRaw(result.Result)
-			if err == nil && analysis != nil {
+			analysis, parseErr := storage.ParseAnalysisFromRaw(result.Result)
+			if parseErr == nil && analysis != nil {
 				// Save as JSON
 				if saveErr := m.storage.SaveAnalysisJSON(result.IssueID, analysis); saveErr == nil {
 					if result.SessionID != "" {
@@ -832,7 +832,12 @@ func (m *Model) handleResult(result claude.TaskResult) {
 				_ = m.storage.SaveSessionID(result.IssueID, result.SessionID)
 			}
 			_ = m.storage.UpdateIssueStatus(result.IssueID, model.StatusAnalyzed, "")
-			m.statusMsg = fmt.Sprintf("Analyzed %s (text mode)", result.IssueID)
+			// Provide more informative status message when JSON parsing failed
+			if parseErr != nil {
+				m.statusMsg = fmt.Sprintf("Analyzed %s (JSON error: saved as text) - try 'a' again", result.IssueID)
+			} else {
+				m.statusMsg = fmt.Sprintf("Analyzed %s (text mode)", result.IssueID)
+			}
 		} else {
 			m.statusMsg = fmt.Sprintf("Analyze %s failed", result.IssueID)
 		}

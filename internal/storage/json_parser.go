@@ -9,6 +9,42 @@ import (
 	"github.com/lunit-heesungyang/issue-manager/internal/model"
 )
 
+// repairCommonJSONErrors attempts to fix common JSON syntax errors
+func repairCommonJSONErrors(jsonStr string) string {
+	repaired := jsonStr
+
+	// Remove trailing commas before ] or }
+	// Pattern: ,\s*] or ,\s*}
+	trailingCommaArrayRegex := regexp.MustCompile(`,(\s*)\]`)
+	repaired = trailingCommaArrayRegex.ReplaceAllString(repaired, "$1]")
+
+	trailingCommaObjRegex := regexp.MustCompile(`,(\s*)\}`)
+	repaired = trailingCommaObjRegex.ReplaceAllString(repaired, "$1}")
+
+	// Remove double closing braces (}}) that should be single
+	// This is a common AI output error where it outputs }} instead of }
+	// Pattern: look for }}\s*,\s*{ or }}\s*] which indicates double closing
+	doubleCloseBraceRegex := regexp.MustCompile(`\}\}(\s*)(,?)(\s*)(\{|\])`)
+	repaired = doubleCloseBraceRegex.ReplaceAllString(repaired, "}$1$2$3$4")
+
+	// Also handle double closing at end of array: }}\s*]
+	doubleCloseEndRegex := regexp.MustCompile(`\}\}(\s*)\]`)
+	repaired = doubleCloseEndRegex.ReplaceAllString(repaired, "}$1]")
+
+	// Handle multiline pattern from issue:
+	// }
+	// },   <- extra } on separate line before comma
+	// This pattern: }\s*\n\s*},  should become },
+	multilineDoubleBraceRegex := regexp.MustCompile(`\}(\s*\n\s*)\},`)
+	repaired = multilineDoubleBraceRegex.ReplaceAllString(repaired, "}$1,")
+
+	// Handle: }\n\s*}\n\s*] at end of array (last item has extra closing brace)
+	multilineEndArrayRegex := regexp.MustCompile(`\}(\s*\n\s*)\}(\s*\n\s*)\]`)
+	repaired = multilineEndArrayRegex.ReplaceAllString(repaired, "}$1$2]")
+
+	return repaired
+}
+
 // ExtractJSON extracts JSON content from a string that may contain code blocks or extra text
 func ExtractJSON(rawOutput string) (string, error) {
 	// First, try to extract from ```json ... ``` code block
@@ -76,13 +112,57 @@ func ParseAnalysisFromRaw(rawOutput string) (*model.Analysis, error) {
 		return nil, err
 	}
 
-	// Validate the JSON
-	if err := ValidateAnalysisJSON([]byte(jsonStr)); err != nil {
-		return nil, err
+	// First attempt: validate the JSON as-is
+	if err := ValidateAnalysisJSON([]byte(jsonStr)); err == nil {
+		return model.ParseAnalysis([]byte(jsonStr))
 	}
 
-	// Parse into struct
-	return model.ParseAnalysis([]byte(jsonStr))
+	// Second attempt: try to repair common errors
+	repairedJSON := repairCommonJSONErrors(jsonStr)
+	if repairedJSON != jsonStr {
+		// Repairs were made, try again
+		if err := ValidateAnalysisJSON([]byte(repairedJSON)); err == nil {
+			return model.ParseAnalysis([]byte(repairedJSON))
+		}
+	}
+
+	// Validation still failed, return detailed error
+	return nil, getDetailedJSONError(jsonStr)
+}
+
+// getDetailedJSONError provides a more informative error message for JSON parsing failures
+func getDetailedJSONError(jsonStr string) error {
+	var js json.RawMessage
+	err := json.Unmarshal([]byte(jsonStr), &js)
+	if err != nil {
+		if syntaxErr, ok := err.(*json.SyntaxError); ok {
+			// Find the line and context around the error
+			lines := strings.Split(jsonStr, "\n")
+			charCount := int64(0)
+			for i, line := range lines {
+				if charCount+int64(len(line))+1 >= syntaxErr.Offset {
+					col := syntaxErr.Offset - charCount
+					context := line
+					if len(context) > 60 {
+						start := int(col) - 30
+						if start < 0 {
+							start = 0
+						}
+						end := start + 60
+						if end > len(context) {
+							end = len(context)
+						}
+						context = "..." + context[start:end] + "..."
+					}
+					return fmt.Errorf("JSON syntax error at line %d, col %d: %s\nContext: %s",
+						i+1, col, err.Error(), context)
+				}
+				charCount += int64(len(line)) + 1 // +1 for newline
+			}
+		}
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	return nil
 }
 
 // ExtractOptionFromRaw extracts a single option from raw Claude output
@@ -92,9 +172,18 @@ func ExtractOptionFromRaw(rawOutput string) (*model.AnalysisOption, error) {
 		return nil, err
 	}
 
+	// First attempt: parse as-is
 	var option model.AnalysisOption
 	if err := json.Unmarshal([]byte(jsonStr), &option); err != nil {
-		return nil, fmt.Errorf("failed to parse option JSON: %w", err)
+		// Second attempt: try to repair common errors
+		repairedJSON := repairCommonJSONErrors(jsonStr)
+		if repairedJSON != jsonStr {
+			if err := json.Unmarshal([]byte(repairedJSON), &option); err != nil {
+				return nil, getDetailedJSONError(jsonStr)
+			}
+		} else {
+			return nil, getDetailedJSONError(jsonStr)
+		}
 	}
 
 	if option.ID == "" {

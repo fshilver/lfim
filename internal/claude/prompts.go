@@ -179,6 +179,54 @@ const analysisJSONSchema = `{
   "risk_assessment": "Overall risk assessment and considerations"
 }`
 
+const jsonFormattingRules = `
+## CRITICAL JSON Formatting Rules
+You MUST follow these rules exactly to ensure valid JSON output:
+
+1. Return ONLY valid JSON - no markdown code blocks, no backticks
+2. NO trailing commas in arrays or objects (e.g., ["a", "b"] NOT ["a", "b",])
+3. Each object in arrays ends with a SINGLE closing brace } - NOT }}
+4. All string values must be properly escaped (use \" for quotes, \n for newlines)
+5. Do not include comments in JSON
+6. Validate your JSON structure before responding
+
+COMMON MISTAKES TO AVOID:
+- WRONG: "pros": ["item1",] (trailing comma)
+- CORRECT: "pros": ["item1"]
+- WRONG: {"id": "opt1", ...}}, (double closing brace)
+- CORRECT: {"id": "opt1", ...}
+`
+
+// analysisJSONExample provides a minimal correct example of the expected JSON format
+const analysisJSONExample = `
+## Example of CORRECT JSON format (note the proper array/object closing):
+{
+  "summary": "Brief summary here",
+  "root_cause": "Root cause description",
+  "options": [
+    {
+      "id": "opt1",
+      "title": "First option",
+      "description": "Description of first option",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1", "Con 2"],
+      "recommended": true,
+      "details": "Detailed explanation..."
+    },
+    {
+      "id": "opt2",
+      "title": "Second option",
+      "description": "Description of second option",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1", "Con 2"],
+      "recommended": false,
+      "details": "Detailed explanation..."
+    }
+  ],
+  "risk_assessment": "Risk assessment here"
+}
+`
+
 // BuildAnalysisPromptJSON builds the analysis prompt for JSON output
 func BuildAnalysisPromptJSON(briefContent, briefPath string) string {
 	return fmt.Sprintf(`%s## Task
@@ -198,8 +246,8 @@ Return a JSON object with the following structure:
 4. The "details" field should contain a comprehensive explanation in markdown format
 5. Do NOT wrap the JSON in code blocks - return raw JSON only
 6. Ensure valid JSON syntax (proper escaping of special characters in strings)
-
-Return ONLY the JSON object, no additional text.`, readOnlyConstraints, briefPath, briefContent, analysisJSONSchema)
+%s%s
+Return ONLY the JSON object, no additional text.`, readOnlyConstraints, briefPath, briefContent, analysisJSONSchema, jsonFormattingRules, analysisJSONExample)
 }
 
 // BuildPlanPromptWithOption builds the plan prompt with selected option context
@@ -312,8 +360,8 @@ Create a new option based on the user's description. Return a JSON object for th
 3. Set "recommended": false (user will choose if they want this option)
 4. The "details" field should be comprehensive
 5. Do NOT wrap the JSON in code blocks - return raw JSON only
-
-Return ONLY the JSON object for this single option.`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription)
+%s
+Return ONLY the JSON object for this single option.`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription, jsonFormattingRules)
 }
 
 // BuildChangeLogPrompt builds the prompt for generating a change log entry
