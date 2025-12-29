@@ -15,6 +15,15 @@ import (
 
 // Issue lifecycle actions
 
+// getEditorCommand returns the user's preferred editor or "vim" as default
+func getEditorCommand() string {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		return "vim"
+	}
+	return editor
+}
+
 func (m Model) startNewIssue() (Model, tea.Cmd) {
 	m.state = StateInput
 	m.inputMode = InputNewIssue
@@ -34,10 +43,7 @@ func (m Model) createIssue(issueType model.IssueType) (Model, tea.Cmd) {
 
 	// Open editor for the new issue's brief.md
 	briefPath := m.storage.BriefPath(issue.ID)
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
+	editor := getEditorCommand()
 
 	cmd := exec.Command(editor, briefPath)
 	cmd.Stdin = os.Stdin
@@ -56,10 +62,7 @@ func (m Model) editIssue() (Model, tea.Cmd) {
 	}
 
 	briefPath := m.storage.BriefPath(issue.ID)
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
+	editor := getEditorCommand()
 
 	cmd := exec.Command(editor, briefPath)
 	cmd.Stdin = os.Stdin
@@ -79,10 +82,7 @@ func (m Model) editAnalysis() (Model, tea.Cmd) {
 	}
 
 	analysisPath := m.storage.AnalysisPath(issue.ID)
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
+	editor := getEditorCommand()
 
 	// Reset review state before opening editor
 	m.state = StateNormal
@@ -106,10 +106,7 @@ func (m Model) editPlan() (Model, tea.Cmd) {
 	}
 
 	planPath := m.storage.PlanPath(issue.ID)
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
+	editor := getEditorCommand()
 
 	// Reset plan review state before opening editor
 	m.state = StateNormal
@@ -133,10 +130,7 @@ func (m Model) editAnalysisJSON() (Model, tea.Cmd) {
 	}
 
 	analysisPath := m.storage.AnalysisJSONPath(issue.ID)
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
+	editor := getEditorCommand()
 
 	// Reset state before opening editor
 	m.state = StateNormal
