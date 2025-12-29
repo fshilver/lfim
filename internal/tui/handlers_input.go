@@ -167,10 +167,12 @@ func (m Model) handleModelSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Directly execute implementation - no confirm step
 		issue := m.pendingRetryIssue
+		// Reset state after capturing issue (pendingModel is used by executeImplementFor)
 		m.pendingRetryIssue = nil
 		m.state = StateNormal
 		return m.executeImplementFor(issue)
 	case "esc", "q":
+		// Reset all model selection state on cancellation
 		m.state = StateNormal
 		m.pendingRetryIssue = nil
 		m.pendingModel = ""
