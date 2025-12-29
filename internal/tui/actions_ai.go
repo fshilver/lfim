@@ -16,6 +16,29 @@ import (
 
 // AI integration actions
 
+// setupViewportForPreview configures viewport for displaying content
+func (m *Model) setupViewportForPreview(content string) {
+	viewportHeight := m.height - 10
+	if viewportHeight < 10 {
+		viewportHeight = 10
+	}
+	viewportWidth := m.width - 14
+	if viewportWidth < 50 {
+		viewportWidth = 50
+	}
+	if viewportWidth > 96 {
+		viewportWidth = 96
+	}
+	m.viewport.Width = viewportWidth
+	m.viewport.Height = viewportHeight
+
+	// Initialize horizontal scroll state
+	m.hOffset = 0
+	m.maxLineWidth = calculateMaxLineWidth(content)
+	m.viewport.SetContent(content)
+	m.viewport.GotoTop()
+}
+
 func (m Model) analyzeIssue() (Model, tea.Cmd) {
 	issue := m.canModifySelectedIssue()
 	if issue == nil {
@@ -242,25 +265,7 @@ func (m Model) reviewIssue() (Model, tea.Cmd) {
 	m.reviewAnalysis = analysis
 
 	// Setup viewport for scrollable analysis
-	viewportHeight := m.height - 10
-	if viewportHeight < 10 {
-		viewportHeight = 10
-	}
-	viewportWidth := m.width - 14
-	if viewportWidth < 50 {
-		viewportWidth = 50
-	}
-	if viewportWidth > 96 {
-		viewportWidth = 96
-	}
-	m.viewport.Width = viewportWidth
-	m.viewport.Height = viewportHeight
-
-	// Initialize horizontal scroll state
-	m.hOffset = 0
-	m.maxLineWidth = calculateMaxLineWidth(analysis)
-	m.viewport.SetContent(analysis)
-	m.viewport.GotoTop()
+	m.setupViewportForPreview(analysis)
 
 	// Enter review preview mode
 	m.state = StateReviewPreview
@@ -299,25 +304,7 @@ func (m Model) planReviewIssue() (Model, tea.Cmd) {
 	m.reviewPlan = plan
 
 	// Setup viewport for scrollable plan
-	viewportHeight := m.height - 10
-	if viewportHeight < 10 {
-		viewportHeight = 10
-	}
-	viewportWidth := m.width - 14
-	if viewportWidth < 50 {
-		viewportWidth = 50
-	}
-	if viewportWidth > 96 {
-		viewportWidth = 96
-	}
-	m.viewport.Width = viewportWidth
-	m.viewport.Height = viewportHeight
-
-	// Initialize horizontal scroll state
-	m.hOffset = 0
-	m.maxLineWidth = calculateMaxLineWidth(plan)
-	m.viewport.SetContent(plan)
-	m.viewport.GotoTop()
+	m.setupViewportForPreview(plan)
 
 	// Enter plan preview mode
 	m.state = StatePlanPreview
