@@ -36,12 +36,14 @@ func (s *Storage) gitAdd(paths ...string) {
 	_ = cmd.Run() // Ignore errors
 }
 
-// HasStagedChanges checks if there are staged changes to commit
+// HasStagedChanges checks if there are staged changes to commit.
+// If git command fails, returns false (allowing action to proceed).
 func (s *Storage) HasStagedChanges() bool {
 	cmd := exec.Command("git", "diff", "--cached", "--stat")
 	cmd.Dir = s.ProjectRoot
 	output, err := cmd.Output()
 	if err != nil {
+		// If git command fails, allow action (don't block on errors)
 		return false
 	}
 	return strings.TrimSpace(string(output)) != ""
