@@ -7,6 +7,9 @@ import (
 	"github.com/lunit-heesungyang/issue-manager/internal/model"
 )
 
+// availableModels is the list of AI models available for selection
+var availableModels = []AIModel{ModelOpus, ModelSonnet, ModelHaiku}
+
 func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
@@ -145,8 +148,6 @@ func (m Model) handleTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleModelSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	models := []AIModel{ModelOpus, ModelSonnet, ModelHaiku}
-
 	switch msg.String() {
 	case "o", "1":
 		m.pendingModel = ModelOpus
@@ -159,10 +160,10 @@ func (m Model) handleModelSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.modelCursor = 2
 	case "up", "k":
 		m.modelCursor = (m.modelCursor - 1 + 3) % 3
-		m.pendingModel = models[m.modelCursor]
+		m.pendingModel = availableModels[m.modelCursor]
 	case "down", "j":
 		m.modelCursor = (m.modelCursor + 1) % 3
-		m.pendingModel = models[m.modelCursor]
+		m.pendingModel = availableModels[m.modelCursor]
 	case "enter":
 		// Directly execute implementation - no confirm step
 		issue := m.pendingRetryIssue
