@@ -178,3 +178,13 @@ func (m Model) handleModelSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (m Model) handleUncommittedChangesErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "esc", "q":
+		m.state = StateNormal
+		m.statusMsg = "Implementation cancelled - commit your changes first"
+		return m, nil
+	}
+	return m, nil
+}

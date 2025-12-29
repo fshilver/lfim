@@ -101,11 +101,13 @@ var OverlayIcons = struct {
 	Success string
 	Input   string
 	Commit  string
+	Error   string
 }{
 	Confirm: ui.IconConfirm,
 	Success: ui.IconSuccess,
 	Input:   ui.IconInput,
 	Commit:  ui.IconCommit,
+	Error:   ui.IconError,
 }
 
 // OverlayStyles defines styles for overlay popups

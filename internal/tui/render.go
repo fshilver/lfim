@@ -82,6 +82,8 @@ func (m Model) View() string {
 		overlay = m.renderCommitConfirmOverlay()
 	case StateCommitGenerating:
 		overlay = m.renderCommitGeneratingOverlay()
+	case StateUncommittedChangesError:
+		overlay = m.renderUncommittedChangesErrorOverlay()
 	}
 
 	// Combine vertically

@@ -44,6 +44,9 @@ type implementCompletedMsg struct {
 	issueID string
 }
 
+// uncommittedChangesErrorMsg indicates implementation blocked due to uncommitted changes
+type uncommittedChangesErrorMsg struct{}
+
 func (m Model) refreshIssues() tea.Cmd {
 	return func() tea.Msg {
 		idx, err := m.storage.LoadIndex()

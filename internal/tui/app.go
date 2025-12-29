@@ -49,6 +49,7 @@ const (
 	StateCommitGenerating
 	StateOptionSelect
 	StateModelSelect
+	StateUncommittedChangesError
 )
 
 // InputMode represents what input is being collected
@@ -257,6 +258,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_ = m.storage.UpdateIssueStatus(msg.issueID, model.StatusImplemented, "")
 		m.statusMsg = fmt.Sprintf("Implemented %s", msg.issueID)
 		return m, m.refreshIssues()
+
+	case uncommittedChangesErrorMsg:
+		// Show error modal when implementation is blocked
+		m.state = StateUncommittedChangesError
+		return m, nil
 	}
 
 	return m, tea.Batch(cmds...)

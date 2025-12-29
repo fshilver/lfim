@@ -104,3 +104,18 @@ func (s *Storage) GetGitDiff() string {
 	}
 	return string(output)
 }
+
+// HasUncommittedChanges checks if there are any uncommitted changes in the repository.
+// Returns true if there are staged, unstaged, or untracked files.
+// If git command fails, returns false (allowing action to proceed).
+func (s *Storage) HasUncommittedChanges() bool {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = s.ProjectRoot
+	output, err := cmd.Output()
+	if err != nil {
+		// If git command fails, allow action (don't block on errors)
+		return false
+	}
+	// --porcelain returns empty output if working directory is clean
+	return strings.TrimSpace(string(output)) != ""
+}

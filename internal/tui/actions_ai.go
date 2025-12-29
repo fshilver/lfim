@@ -403,6 +403,13 @@ func (m Model) implementIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Check for uncommitted changes before allowing implementation
+	if m.storage.HasUncommittedChanges() {
+		return m, func() tea.Msg {
+			return uncommittedChangesErrorMsg{}
+		}
+	}
+
 	// Go to model selection (model selection serves as implicit confirmation)
 	m.state = StateModelSelect
 	m.pendingRetryIssue = issue

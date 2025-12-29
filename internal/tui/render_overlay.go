@@ -382,3 +382,24 @@ func (m Model) renderCommitGeneratingOverlay() string {
 
 	return m.renderBaseOverlay(title, content, footer, 50)
 }
+
+func (m Model) renderUncommittedChangesErrorOverlay() string {
+	// Build error message with warning icon
+	title := fmt.Sprintf("%s Implementation Blocked", OverlayIcons.Error)
+
+	// Content explaining the issue
+	content := "Cannot start new implementation.\n\n" +
+		"You have uncommitted changes in your repository.\n" +
+		"Please commit or stash your changes before starting\n" +
+		"a new implementation to avoid mixing code changes\n" +
+		"from different issues.\n\n" +
+		"Actions:\n" +
+		"  • Run 'git status' to see uncommitted changes\n" +
+		"  • Commit changes: 'git add . && git commit'\n" +
+		"  • Or stash changes: 'git stash'"
+
+	// Footer with dismiss hint
+	footer := "[Enter/Esc] Dismiss"
+
+	return m.renderBaseOverlay(title, content, footer, 60)
+}

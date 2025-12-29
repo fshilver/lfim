@@ -25,6 +25,7 @@ const (
 	IconSuccess = "✓"
 	IconInput   = "✎"
 	IconCommit  = "📝"
+	IconError   = "⚠️ "
 )
 
 // Checkbox icons
