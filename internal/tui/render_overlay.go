@@ -11,6 +11,14 @@ import (
 	"github.com/lunit-heesungyang/issue-manager/internal/ui"
 )
 
+// cursorIndicator returns a cursor string if the index matches, otherwise spaces
+func cursorIndicator(currentIdx, targetIdx int) string {
+	if currentIdx == targetIdx {
+		return "► "
+	}
+	return "  "
+}
+
 // placeOverlay places the overlay centered on top of the background
 func placeOverlay(width, height int, overlay, background string) string {
 	overlayWidth := lipgloss.Width(overlay)
@@ -233,20 +241,14 @@ func (m Model) renderModelSelectOverlay() string {
 		issueID = m.pendingRetryIssue.ID
 	}
 
-	// Cursor indicator function
-	cursor := func(idx int) string {
-		if m.modelCursor == idx {
-			return "► "
-		}
-		return "  "
-	}
-
 	// Build options with cursor indicator
 	options := fmt.Sprintf(
 		"%s[o] Opus   - Highest quality, slower\n"+
 			"%s[s] Sonnet - Balanced performance\n"+
 			"%s[h] Haiku  - Fast, cost-effective (Default)",
-		cursor(0), cursor(1), cursor(2),
+		cursorIndicator(m.modelCursor, 0),
+		cursorIndicator(m.modelCursor, 1),
+		cursorIndicator(m.modelCursor, 2),
 	)
 
 	// Warning about code modification
