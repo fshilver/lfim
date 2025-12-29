@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -50,6 +51,7 @@ const (
 	StateOptionSelect
 	StateModelSelect
 	StateUncommittedChangesError
+	StateStagedChangesError
 )
 
 // InputMode represents what input is being collected
@@ -151,6 +153,11 @@ type Model struct {
 	// Model selection state
 	pendingModel AIModel // selected model for implementation
 	modelCursor  int     // cursor position in model list (0=opus, 1=sonnet, 2=haiku)
+
+	// Git status tracking
+	gitStatus     *storage.GitStatus // current git status (cached)
+	gitWarning    string              // warning message for unstaged changes
+	stagedFiles   []string            // list of staged files causing error
 }
 
 // New creates a new TUI model
@@ -186,9 +193,17 @@ func New(projectPath string) Model {
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.refreshIssues(),
+		m.updateGitStatusCmd(),
 		m.tickCmd(),
 		m.listenForResults(),
 	)
+}
+
+// updateGitStatusCmd returns a command to update git status
+func (m Model) updateGitStatusCmd() tea.Cmd {
+	return func() tea.Msg {
+		return gitStatusUpdatedMsg{}
+	}
 }
 
 // Update implements tea.Model
@@ -263,8 +278,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Show error modal when implementation is blocked
 		m.state = StateUncommittedChangesError
 		return m, nil
+
+	case stagedChangesErrorMsg:
+		// Show error modal for staged changes
+		m.stagedFiles = msg.stagedFiles
+		m.state = StateStagedChangesError
+		return m, nil
+
+	case gitStatusUpdatedMsg:
+		// Update git status and warning
+		m.updateGitStatus()
+		return m, nil
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
+// updateGitStatus updates the git status and warning message
+func (m *Model) updateGitStatus() {
+	m.gitStatus = m.storage.CheckGitStatusDetailed()
+
+	// Update warning message based on unstaged files
+	if m.gitStatus.HasUnstaged {
+		fileCount := len(m.gitStatus.UnstagedFiles)
+		if fileCount > 3 {
+			m.gitWarning = fmt.Sprintf("⚠ %d unstaged files", fileCount)
+		} else {
+			m.gitWarning = fmt.Sprintf("⚠ Unstaged: %s", strings.Join(m.gitStatus.UnstagedFiles, ", "))
+		}
+	} else {
+		m.gitWarning = ""
+	}
+}

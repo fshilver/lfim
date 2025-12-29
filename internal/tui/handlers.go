@@ -27,6 +27,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleOptionSelectKey(msg)
 	case StateUncommittedChangesError:
 		return m.handleUncommittedChangesErrorKey(msg)
+	case StateStagedChangesError:
+		return m.handleStagedChangesErrorKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}

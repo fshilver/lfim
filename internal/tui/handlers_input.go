@@ -191,3 +191,14 @@ func (m Model) handleUncommittedChangesErrorKey(msg tea.KeyMsg) (tea.Model, tea.
 	}
 	return m, nil
 }
+
+func (m Model) handleStagedChangesErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "esc", "q":
+		m.state = StateNormal
+		m.statusMsg = "Action cancelled - commit or unstage your changes first"
+		m.stagedFiles = nil
+		return m, nil
+	}
+	return m, nil
+}

@@ -67,14 +67,14 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Refresh):
 		m.statusMsg = "Refreshed"
-		return m, m.refreshIssues()
+		return m, tea.Batch(m.refreshIssues(), m.updateGitStatusCmd())
 
 	case key.Matches(msg, m.keys.Filter):
 		m.filterMode = (m.filterMode + 1) % 3
 		m.listVOffset = 0 // Reset vertical scroll on filter change
 		m.listHOffset = 0 // Reset horizontal scroll on filter change
 		m.statusMsg = fmt.Sprintf("Filter: %s", m.filterMode)
-		return m, m.refreshIssues()
+		return m, tea.Batch(m.refreshIssues(), m.updateGitStatusCmd())
 	}
 
 	// Handle horizontal scroll with left/right arrow keys

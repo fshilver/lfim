@@ -405,3 +405,37 @@ func (m Model) renderUncommittedChangesErrorOverlay() string {
 
 	return m.renderBaseOverlay(title, content, footer, 60)
 }
+
+func (m Model) renderStagedChangesErrorOverlay() string {
+	// Build error message with error icon
+	title := fmt.Sprintf("%s Action Blocked", OverlayIcons.Error)
+
+	// Build list of staged files
+	fileList := ""
+	maxFiles := 10
+	for i, file := range m.stagedFiles {
+		if i >= maxFiles {
+			remaining := len(m.stagedFiles) - maxFiles
+			fileList += fmt.Sprintf("  ... and %d more file(s)\n", remaining)
+			break
+		}
+		fileList += fmt.Sprintf("  • %s\n", file)
+	}
+
+	// Content explaining the issue
+	content := "Cannot proceed with this action.\n\n" +
+		"You have staged changes in your repository.\n" +
+		"Please commit or unstage them first to avoid\n" +
+		"mixing code changes from different issues.\n\n" +
+		"Staged files:\n" +
+		fileList + "\n" +
+		"Actions:\n" +
+		"  • Commit changes: 'git commit -m \"message\"'\n" +
+		"  • Unstage changes: 'git reset HEAD'\n" +
+		"  • Or stash changes: 'git stash'"
+
+	// Footer with dismiss hint
+	footer := "[Enter/Esc] Dismiss"
+
+	return m.renderBaseOverlay(title, content, footer, 65)
+}

@@ -390,10 +390,11 @@ func (m Model) implementIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Check for uncommitted changes before allowing implementation
-	if m.storage.HasUncommittedChanges() {
+	// Check git status - block only on staged changes, warn on unstaged
+	m.updateGitStatus()
+	if m.gitStatus.HasStaged {
 		return m, func() tea.Msg {
-			return uncommittedChangesErrorMsg{}
+			return stagedChangesErrorMsg{stagedFiles: m.gitStatus.StagedFiles}
 		}
 	}
 

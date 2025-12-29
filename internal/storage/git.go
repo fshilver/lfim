@@ -6,6 +6,44 @@ import (
 	"strings"
 )
 
+// GitStatus represents the current git status with separate staged/unstaged tracking
+type GitStatus struct {
+	HasStaged     bool
+	HasUnstaged   bool
+	StagedFiles   []string
+	UnstagedFiles []string
+}
+
+// CheckGitStatusDetailed returns detailed git status with staged/unstaged changes separated.
+// If git command fails, returns empty status (allowing action to proceed gracefully).
+func (s *Storage) CheckGitStatusDetailed() *GitStatus {
+	status := &GitStatus{}
+
+	// Check for staged changes
+	stagedCmd := exec.Command("git", "diff", "--cached", "--name-only")
+	stagedCmd.Dir = s.ProjectRoot
+	if stagedOutput, err := stagedCmd.Output(); err == nil {
+		trimmed := strings.TrimSpace(string(stagedOutput))
+		if trimmed != "" {
+			status.HasStaged = true
+			status.StagedFiles = strings.Split(trimmed, "\n")
+		}
+	}
+
+	// Check for unstaged changes
+	unstagedCmd := exec.Command("git", "diff", "--name-only")
+	unstagedCmd.Dir = s.ProjectRoot
+	if unstagedOutput, err := unstagedCmd.Output(); err == nil {
+		trimmed := strings.TrimSpace(string(unstagedOutput))
+		if trimmed != "" {
+			status.HasUnstaged = true
+			status.UnstagedFiles = strings.Split(trimmed, "\n")
+		}
+	}
+
+	return status
+}
+
 // StageIssueFiles stages all issue files (brief, analysis, plan, index) for git commit.
 // Called before implement to stage confirmed files.
 func (s *Storage) StageIssueFiles(issueID string) {

@@ -47,6 +47,14 @@ type implementCompletedMsg struct {
 // uncommittedChangesErrorMsg indicates implementation blocked due to uncommitted changes
 type uncommittedChangesErrorMsg struct{}
 
+// stagedChangesErrorMsg indicates action blocked due to staged changes
+type stagedChangesErrorMsg struct {
+	stagedFiles []string
+}
+
+// gitStatusUpdatedMsg triggers git status refresh
+type gitStatusUpdatedMsg struct{}
+
 func (m Model) refreshIssues() tea.Cmd {
 	return func() tea.Msg {
 		idx, err := m.storage.LoadIndex()

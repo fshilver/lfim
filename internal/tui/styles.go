@@ -33,6 +33,10 @@ type Styles struct {
 	// Input
 	InputPrompt lipgloss.Style
 	InputText   lipgloss.Style
+
+	// Messages
+	Warning lipgloss.Style
+	Error   lipgloss.Style
 }
 
 // DefaultStyles returns the default style configuration
@@ -92,6 +96,15 @@ func DefaultStyles() Styles {
 
 		InputText: lipgloss.NewStyle().
 			Foreground(ui.ColorTextWhite),
+
+		Warning: lipgloss.NewStyle().
+			Foreground(ui.ColorWarning).
+			Padding(0, 1),
+
+		Error: lipgloss.NewStyle().
+			Foreground(ui.ColorError).
+			Bold(true).
+			Padding(0, 1),
 	}
 }
 

@@ -22,10 +22,14 @@ func (m Model) View() string {
 		return m.renderOptionSelectView()
 	}
 
-	// Calculate layout - reserve 3 lines for header(1) + footer(1) + status(1)
+	// Calculate layout - reserve lines for header(1) + footer(1) + status(1) + optional warning(1)
+	reservedLines := 3
+	if m.gitWarning != "" {
+		reservedLines = 4
+	}
 	listWidth := m.width / 2
 	previewWidth := m.width - listWidth
-	contentHeight := m.height - 3
+	contentHeight := m.height - reservedLines
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -63,6 +67,12 @@ func (m Model) View() string {
 	footer := m.styles.Footer.Render(keys)
 	status := m.styles.StatusBar.Render(m.statusMsg)
 
+	// Render git warning banner if present
+	var gitWarningBanner string
+	if m.gitWarning != "" {
+		gitWarningBanner = m.styles.Warning.Render(m.gitWarning)
+	}
+
 	// Handle special states
 	var overlay string
 	switch m.state {
@@ -84,15 +94,16 @@ func (m Model) View() string {
 		overlay = m.renderCommitGeneratingOverlay()
 	case StateUncommittedChangesError:
 		overlay = m.renderUncommittedChangesErrorOverlay()
+	case StateStagedChangesError:
+		overlay = m.renderStagedChangesErrorOverlay()
 	}
 
 	// Combine vertically
-	view := lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		content,
-		footer,
-		status,
-	)
+	parts := []string{header, content, footer, status}
+	if gitWarningBanner != "" {
+		parts = append(parts, gitWarningBanner)
+	}
+	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	// Force exact terminal height to prevent scrolling issues
 	lines := strings.Split(view, "\n")
