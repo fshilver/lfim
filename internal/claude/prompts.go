@@ -247,6 +247,18 @@ Return a JSON object with the following structure:
 5. Do NOT wrap the JSON in code blocks - return raw JSON only
 6. Ensure valid JSON syntax (proper escaping of special characters in strings)
 %s%s
+
+## CRITICAL OUTPUT REQUIREMENTS
+RETURN ONLY VALID JSON. DO NOT include:
+- NO markdown code blocks or backticks
+- NO conversational text before or after the JSON
+- NO preamble like "Here's the analysis:" or "Let me provide:"
+- NO explanatory text
+
+Your response MUST start with { and end with }
+The first character of your response must be: {
+The last character of your response must be: }
+
 Return ONLY the JSON object, no additional text.`, readOnlyConstraints, briefPath, briefContent, analysisJSONSchema, jsonFormattingRules, analysisJSONExample)
 }
 
@@ -361,6 +373,15 @@ Create a new option based on the user's description. Return a JSON object for th
 4. The "details" field should be comprehensive
 5. Do NOT wrap the JSON in code blocks - return raw JSON only
 %s
+
+## CRITICAL OUTPUT REQUIREMENTS
+RETURN ONLY VALID JSON. DO NOT include:
+- NO markdown code blocks or backticks
+- NO conversational text before or after the JSON
+- NO preamble or explanatory text
+
+Your response MUST start with { and end with }
+
 Return ONLY the JSON object for this single option.`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription, jsonFormattingRules)
 }
 

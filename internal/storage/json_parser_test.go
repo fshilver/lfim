@@ -130,6 +130,25 @@ func TestExtractJSON(t *testing.T) {
 			input:   "Just some text without JSON",
 			wantErr: true,
 		},
+		{
+			name: "issue error case 1: conversational text with code block",
+			input: `Perfect! Now I have a comprehensive understanding of the issue. Let me provide the structured analysis:
+
+` + "```json" + `
+{
+  "summary": "Test summary",
+  "root_cause": "Test root cause"
+}
+` + "```",
+			want:    `{"summary": "Test summary","root_cause": "Test root cause"}`,
+			wantErr: false,
+		},
+		{
+			name: "issue error case 2: just code block wrapper",
+			input: "```json\n{\n  \"summary\": \"Test summary\",\n  \"root_cause\": \"Test root cause\"\n}\n```",
+			want:    `{"summary": "Test summary","root_cause": "Test root cause"}`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -139,8 +158,13 @@ func TestExtractJSON(t *testing.T) {
 				t.Errorf("ExtractJSON() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && got != tt.want {
-				t.Errorf("ExtractJSON() = %v, want %v", got, tt.want)
+			if !tt.wantErr {
+				// Normalize whitespace for comparison
+				gotNormalized := strings.Join(strings.Fields(got), "")
+				wantNormalized := strings.Join(strings.Fields(tt.want), "")
+				if gotNormalized != wantNormalized {
+					t.Errorf("ExtractJSON() = %v, want %v", got, tt.want)
+				}
 			}
 		})
 	}
