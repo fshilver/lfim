@@ -24,6 +24,16 @@ func getEditorCommand() string {
 	return editor
 }
 
+// executeEditorCommand opens a file in the user's editor and returns a tea.Cmd
+func executeEditorCommand(path string, callback func(error) tea.Msg) tea.Cmd {
+	editor := getEditorCommand()
+	cmd := exec.Command(editor, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return tea.ExecProcess(cmd, callback)
+}
+
 func (m Model) startNewIssue() (Model, tea.Cmd) {
 	m.state = StateInput
 	m.inputMode = InputNewIssue
@@ -43,14 +53,7 @@ func (m Model) createIssue(issueType model.IssueType) (Model, tea.Cmd) {
 
 	// Open editor for the new issue's brief.md
 	briefPath := m.storage.BriefPath(issue.ID)
-	editor := getEditorCommand()
-
-	cmd := exec.Command(editor, briefPath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, executeEditorCommand(briefPath, func(err error) tea.Msg {
 		return syncAfterEditMsg{issueID: issue.ID}
 	})
 }
@@ -62,14 +65,7 @@ func (m Model) editIssue() (Model, tea.Cmd) {
 	}
 
 	briefPath := m.storage.BriefPath(issue.ID)
-	editor := getEditorCommand()
-
-	cmd := exec.Command(editor, briefPath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, executeEditorCommand(briefPath, func(err error) tea.Msg {
 		return syncAfterEditMsg{issueID: issue.ID}
 	})
 }
@@ -82,18 +78,12 @@ func (m Model) editAnalysis() (Model, tea.Cmd) {
 	}
 
 	analysisPath := m.storage.AnalysisPath(issue.ID)
-	editor := getEditorCommand()
 
 	// Reset review state before opening editor
 	m.state = StateNormal
 	m.reviewAnalysis = ""
 
-	cmd := exec.Command(editor, analysisPath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, executeEditorCommand(analysisPath, func(err error) tea.Msg {
 		return refreshRequestMsg{}
 	})
 }
@@ -106,18 +96,12 @@ func (m Model) editPlan() (Model, tea.Cmd) {
 	}
 
 	planPath := m.storage.PlanPath(issue.ID)
-	editor := getEditorCommand()
 
 	// Reset plan review state before opening editor
 	m.state = StateNormal
 	m.reviewPlan = ""
 
-	cmd := exec.Command(editor, planPath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, executeEditorCommand(planPath, func(err error) tea.Msg {
 		return refreshRequestMsg{}
 	})
 }
@@ -130,18 +114,12 @@ func (m Model) editAnalysisJSON() (Model, tea.Cmd) {
 	}
 
 	analysisPath := m.storage.AnalysisJSONPath(issue.ID)
-	editor := getEditorCommand()
 
 	// Reset state before opening editor
 	m.state = StateNormal
 	m.analysis = nil
 
-	cmd := exec.Command(editor, analysisPath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, executeEditorCommand(analysisPath, func(err error) tea.Msg {
 		return refreshRequestMsg{}
 	})
 }
