@@ -106,6 +106,18 @@ func TestRepairCommonJSONErrors_MultilinePattern(t *testing.T) {
 }
 
 func TestExtractJSON(t *testing.T) {
+	// Test inputs with complex string construction
+	conversationalWithCodeBlock := `Perfect! Now I have a comprehensive understanding of the issue. Let me provide the structured analysis:
+
+` + "```json" + `
+{
+  "summary": "Test summary",
+  "root_cause": "Test root cause"
+}
+` + "```"
+
+	codeBlockOnly := "```json\n{\n  \"summary\": \"Test summary\",\n  \"root_cause\": \"Test root cause\"\n}\n```"
+
 	tests := []struct {
 		name    string
 		input   string
@@ -136,21 +148,14 @@ func TestExtractJSON(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "issue error case 1: conversational text with code block",
-			input: `Perfect! Now I have a comprehensive understanding of the issue. Let me provide the structured analysis:
-
-` + "```json" + `
-{
-  "summary": "Test summary",
-  "root_cause": "Test root cause"
-}
-` + "```",
+			name:    "issue error case 1: conversational text with code block",
+			input:   conversationalWithCodeBlock,
 			want:    `{"summary": "Test summary","root_cause": "Test root cause"}`,
 			wantErr: false,
 		},
 		{
-			name: "issue error case 2: just code block wrapper",
-			input: "```json\n{\n  \"summary\": \"Test summary\",\n  \"root_cause\": \"Test root cause\"\n}\n```",
+			name:    "issue error case 2: just code block wrapper",
+			input:   codeBlockOnly,
 			want:    `{"summary": "Test summary","root_cause": "Test root cause"}`,
 			wantErr: false,
 		},
