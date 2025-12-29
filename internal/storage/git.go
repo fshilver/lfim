@@ -18,6 +18,8 @@ func (s *Storage) StageIssueFiles(issueID string) {
 }
 
 // gitAdd stages files to git. Silently fails if not a git repo.
+// Errors are intentionally ignored to allow the application to work
+// in non-git environments without blocking normal operation.
 func (s *Storage) gitAdd(paths ...string) {
 	var existing []string
 	for _, p := range paths {
@@ -33,7 +35,7 @@ func (s *Storage) gitAdd(paths ...string) {
 	args := append([]string{"add"}, existing...)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = s.ProjectRoot
-	_ = cmd.Run() // Ignore errors
+	_ = cmd.Run() // Silently ignore errors (git may not be available)
 }
 
 // HasStagedChanges checks if there are staged changes to commit.
