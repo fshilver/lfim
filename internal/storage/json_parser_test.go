@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+// normalizeJSON removes all whitespace from a JSON string for comparison
+func normalizeJSON(s string) string {
+	return strings.Join(strings.Fields(s), "")
+}
+
 func TestRepairCommonJSONErrors(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -160,9 +165,7 @@ func TestExtractJSON(t *testing.T) {
 			}
 			if !tt.wantErr {
 				// Normalize whitespace for comparison
-				gotNormalized := strings.Join(strings.Fields(got), "")
-				wantNormalized := strings.Join(strings.Fields(tt.want), "")
-				if gotNormalized != wantNormalized {
+				if normalizeJSON(got) != normalizeJSON(tt.want) {
 					t.Errorf("ExtractJSON() = %v, want %v", got, tt.want)
 				}
 			}
