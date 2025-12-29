@@ -11,7 +11,7 @@ import (
 func (s *Storage) StageIssueFiles(issueID string) {
 	s.gitAdd(
 		s.BriefPath(issueID),
-		s.AnalysisPath(issueID),
+		s.AnalysisJSONPath(issueID),
 		s.PlanPath(issueID),
 		s.IndexPath(),
 	)
