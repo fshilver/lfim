@@ -87,9 +87,25 @@ func IsAvailable() bool {
 	return cmd.Run() == nil
 }
 
+// compressJSON compresses a JSON string by removing all whitespace
+// Returns the original string if compression fails
+func compressJSON(jsonStr string) string {
+	var obj interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &obj); err != nil {
+		return jsonStr // Return original if invalid JSON
+	}
+	compressed, err := json.Marshal(obj)
+	if err != nil {
+		return jsonStr // Return original if marshaling fails
+	}
+	return string(compressed)
+}
+
 // RunWithJSONSchema executes Claude CLI with JSON schema and returns (success, result, sessionID)
 func (c *Client) RunWithJSONSchema(prompt string, schema string, model string, resumeSession string) (bool, string, string) {
-	args := []string{"--output-format", "json", "--json-schema", schema}
+	// Compress schema for CLI argument (remove whitespace)
+	compressedSchema := compressJSON(schema)
+	args := []string{"--output-format", "json", "--json-schema", compressedSchema}
 
 	if model != "" {
 		args = append(args, "--model", model)
