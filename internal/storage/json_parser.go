@@ -3,76 +3,23 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/lunit-heesungyang/issue-manager/internal/model"
 )
 
-// repairCommonJSONErrors attempts to fix common JSON syntax errors
-func repairCommonJSONErrors(jsonStr string) string {
-	repaired := jsonStr
-
-	// Remove trailing commas before ] or }
-	// Pattern: ,\s*] or ,\s*}
-	trailingCommaArrayRegex := regexp.MustCompile(`,(\s*)\]`)
-	repaired = trailingCommaArrayRegex.ReplaceAllString(repaired, "$1]")
-
-	trailingCommaObjRegex := regexp.MustCompile(`,(\s*)\}`)
-	repaired = trailingCommaObjRegex.ReplaceAllString(repaired, "$1}")
-
-	// Remove double closing braces (}}) that should be single
-	// This is a common AI output error where it outputs }} instead of }
-	// Pattern: look for }}\s*,\s*{ or }}\s*] which indicates double closing
-	doubleCloseBraceRegex := regexp.MustCompile(`\}\}(\s*)(,?)(\s*)(\{|\])`)
-	repaired = doubleCloseBraceRegex.ReplaceAllString(repaired, "}$1$2$3$4")
-
-	// Also handle double closing at end of array: }}\s*]
-	doubleCloseEndRegex := regexp.MustCompile(`\}\}(\s*)\]`)
-	repaired = doubleCloseEndRegex.ReplaceAllString(repaired, "}$1]")
-
-	// Handle multiline pattern from issue:
-	// }
-	// },   <- extra } on separate line before comma
-	// This pattern: }\s*\n\s*},  should become },
-	multilineDoubleBraceRegex := regexp.MustCompile(`\}(\s*\n\s*)\},`)
-	repaired = multilineDoubleBraceRegex.ReplaceAllString(repaired, "}$1,")
-
-	// Handle: }\n\s*}\n\s*] at end of array (last item has extra closing brace)
-	multilineEndArrayRegex := regexp.MustCompile(`\}(\s*\n\s*)\}(\s*\n\s*)\]`)
-	repaired = multilineEndArrayRegex.ReplaceAllString(repaired, "}$1$2]")
-
-	return repaired
-}
-
-// ExtractJSON extracts JSON content from a string that may contain code blocks or extra text
+// ExtractJSON extracts JSON content from Claude CLI output
+// When using --json-schema, the output should be valid JSON in the "result" field
+// This function handles both new schema-based output and legacy formats for compatibility
 func ExtractJSON(rawOutput string) (string, error) {
-	// First, try to extract from ```json ... ``` code block
-	jsonBlockRegex := regexp.MustCompile("(?s)```json\\s*\\n?(.*?)\\n?```")
-	if matches := jsonBlockRegex.FindStringSubmatch(rawOutput); len(matches) > 1 {
-		return strings.TrimSpace(matches[1]), nil
-	}
-
-	// Try to extract from ``` ... ``` code block (without json tag)
-	codeBlockRegex := regexp.MustCompile("(?s)```\\s*\\n?(.*?)\\n?```")
-	if matches := codeBlockRegex.FindStringSubmatch(rawOutput); len(matches) > 1 {
-		content := strings.TrimSpace(matches[1])
-		// Verify it looks like JSON
-		if strings.HasPrefix(content, "{") {
-			return content, nil
-		}
-	}
-
-	// Try to find raw JSON object (from first { to last })
 	trimmed := strings.TrimSpace(rawOutput)
-	firstBrace := strings.Index(trimmed, "{")
-	lastBrace := strings.LastIndex(trimmed, "}")
 
-	if firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace {
-		return trimmed[firstBrace : lastBrace+1], nil
+	// If it's already a valid JSON object starting with {, return as-is
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+		return trimmed, nil
 	}
 
-	return "", fmt.Errorf("no valid JSON found in output")
+	return "", fmt.Errorf("invalid JSON format in output")
 }
 
 // ValidateAnalysisJSON validates that the JSON has required fields
@@ -105,29 +52,19 @@ func ValidateAnalysisJSON(data []byte) error {
 }
 
 // ParseAnalysisFromRaw parses analysis JSON from raw Claude output
+// When using --json-schema, the output should already be valid JSON conforming to the schema
 func ParseAnalysisFromRaw(rawOutput string) (*model.Analysis, error) {
-	// Extract JSON from potential code blocks
 	jsonStr, err := ExtractJSON(rawOutput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to extract JSON: %w", err)
 	}
 
-	// First attempt: validate the JSON as-is
-	if err := ValidateAnalysisJSON([]byte(jsonStr)); err == nil {
-		return model.ParseAnalysis([]byte(jsonStr))
+	// Parse and validate the JSON
+	if err := ValidateAnalysisJSON([]byte(jsonStr)); err != nil {
+		return nil, fmt.Errorf("validation failed: %w\n%s", err, getDetailedJSONError(jsonStr))
 	}
 
-	// Second attempt: try to repair common errors
-	repairedJSON := repairCommonJSONErrors(jsonStr)
-	if repairedJSON != jsonStr {
-		// Repairs were made, try again
-		if err := ValidateAnalysisJSON([]byte(repairedJSON)); err == nil {
-			return model.ParseAnalysis([]byte(repairedJSON))
-		}
-	}
-
-	// Validation still failed, return detailed error
-	return nil, getDetailedJSONError(jsonStr)
+	return model.ParseAnalysis([]byte(jsonStr))
 }
 
 // getDetailedJSONError provides a more informative error message for JSON parsing failures
@@ -166,24 +103,16 @@ func getDetailedJSONError(jsonStr string) error {
 }
 
 // ExtractOptionFromRaw extracts a single option from raw Claude output
+// When using --json-schema, the output should already be valid JSON conforming to the schema
 func ExtractOptionFromRaw(rawOutput string) (*model.AnalysisOption, error) {
 	jsonStr, err := ExtractJSON(rawOutput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to extract JSON: %w", err)
 	}
 
-	// First attempt: parse as-is
 	var option model.AnalysisOption
 	if err := json.Unmarshal([]byte(jsonStr), &option); err != nil {
-		// Second attempt: try to repair common errors
-		repairedJSON := repairCommonJSONErrors(jsonStr)
-		if repairedJSON != jsonStr {
-			if err := json.Unmarshal([]byte(repairedJSON), &option); err != nil {
-				return nil, getDetailedJSONError(jsonStr)
-			}
-		} else {
-			return nil, getDetailedJSONError(jsonStr)
-		}
+		return nil, fmt.Errorf("failed to parse option: %w\n%s", err, getDetailedJSONError(jsonStr))
 	}
 
 	if option.ID == "" {

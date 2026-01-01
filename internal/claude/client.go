@@ -86,3 +86,48 @@ func IsAvailable() bool {
 	cmd := exec.Command("claude", "--version")
 	return cmd.Run() == nil
 }
+
+// RunWithJSONSchema executes Claude CLI with JSON schema and returns (success, result, sessionID)
+func (c *Client) RunWithJSONSchema(prompt string, schema string, model string, resumeSession string) (bool, string, string) {
+	args := []string{"--output-format", "json", "--json-schema", schema}
+
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if resumeSession != "" {
+		args = append(args, "--resume", resumeSession)
+	}
+	args = append(args, "-p", prompt)
+
+	cmd := exec.Command("claude", args...)
+	cmd.Dir = c.WorkingDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Include stderr in error message for better debugging
+			stderr := string(exitErr.Stderr)
+			if stderr == "" {
+				stderr = string(output)
+			}
+			return false, stderr, ""
+		}
+		return false, err.Error(), ""
+	}
+
+	return c.parseResponse(string(output))
+}
+
+// RunWithJSONSchemaAsync executes Claude CLI with JSON schema in a goroutine
+func (c *Client) RunWithJSONSchemaAsync(issueID, taskType, prompt, schema, model, resumeSession string, resultChan chan<- TaskResult) {
+	go func() {
+		success, result, sessionID := c.RunWithJSONSchema(prompt, schema, model, resumeSession)
+		resultChan <- TaskResult{
+			IssueID:   issueID,
+			TaskType:  taskType,
+			Success:   success,
+			Result:    result,
+			SessionID: sessionID,
+		}
+	}()
+}

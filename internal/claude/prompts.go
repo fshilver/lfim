@@ -162,103 +162,19 @@ Output ONLY the commit message, no explanations.
 Do NOT wrap the output in code blocks or backticks.`, issueID, content, issueID)
 }
 
-const analysisJSONSchema = `{
-  "summary": "Brief summary of the issue and analysis",
-  "root_cause": "Root cause analysis or feature scope description",
-  "options": [
-    {
-      "id": "opt1",
-      "title": "Option title",
-      "description": "Brief description of this approach",
-      "pros": ["Advantage 1", "Advantage 2"],
-      "cons": ["Disadvantage 1", "Disadvantage 2"],
-      "recommended": true,
-      "details": "Detailed explanation in markdown format..."
-    }
-  ],
-  "risk_assessment": "Overall risk assessment and considerations"
-}`
-
-const jsonFormattingRules = `
-## CRITICAL JSON Formatting Rules
-You MUST follow these rules exactly to ensure valid JSON output:
-
-1. Return ONLY valid JSON - no markdown code blocks, no backticks
-2. NO trailing commas in arrays or objects (e.g., ["a", "b"] NOT ["a", "b",])
-3. Each object in arrays ends with a SINGLE closing brace } - NOT }}
-4. All string values must be properly escaped (use \" for quotes, \n for newlines)
-5. Do not include comments in JSON
-6. Validate your JSON structure before responding
-
-COMMON MISTAKES TO AVOID:
-- WRONG: "pros": ["item1",] (trailing comma)
-- CORRECT: "pros": ["item1"]
-- WRONG: {"id": "opt1", ...}}, (double closing brace)
-- CORRECT: {"id": "opt1", ...}
-`
-
-const criticalOutputRequirements = `
-## CRITICAL OUTPUT REQUIREMENTS
-RETURN ONLY VALID JSON. DO NOT include:
-- NO markdown code blocks or backticks
-- NO conversational text before or after the JSON
-- NO preamble or explanatory text
-
-Your response MUST start with { and end with }
-
-Return ONLY the JSON object.`
-
-// analysisJSONExample provides a minimal correct example of the expected JSON format
-const analysisJSONExample = `
-## Example of CORRECT JSON format (note the proper array/object closing):
-{
-  "summary": "Brief summary here",
-  "root_cause": "Root cause description",
-  "options": [
-    {
-      "id": "opt1",
-      "title": "First option",
-      "description": "Description of first option",
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
-      "recommended": true,
-      "details": "Detailed explanation..."
-    },
-    {
-      "id": "opt2",
-      "title": "Second option",
-      "description": "Description of second option",
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
-      "recommended": false,
-      "details": "Detailed explanation..."
-    }
-  ],
-  "risk_assessment": "Risk assessment here"
-}
-`
-
-// BuildAnalysisPromptJSON builds the analysis prompt for JSON output
+// BuildAnalysisPromptJSON builds the analysis prompt for JSON output with schema validation
 func BuildAnalysisPromptJSON(briefContent, briefPath string) string {
 	return fmt.Sprintf(`%s## Task
-Analyze this issue and provide structured analysis in JSON format.
+Analyze this issue and provide structured analysis.
 
 Issue (%s):
-%s
-
-## Output Format
-Return a JSON object with the following structure:
 %s
 
 ## Requirements
 1. Provide at least 2-3 implementation options
 2. Mark exactly ONE option as "recommended": true
 3. Each option must have at least 2 pros and 2 cons
-4. The "details" field should contain a comprehensive explanation in markdown format
-5. Do NOT wrap the JSON in code blocks - return raw JSON only
-6. Ensure valid JSON syntax (proper escaping of special characters in strings)
-%s%s
-%s`, readOnlyConstraints, briefPath, briefContent, analysisJSONSchema, jsonFormattingRules, analysisJSONExample, criticalOutputRequirements)
+4. The "details" field should contain a comprehensive explanation in markdown format`, readOnlyConstraints, briefPath, briefContent)
 }
 
 // BuildPlanPromptWithOption builds the plan prompt with selected option context
@@ -353,26 +269,13 @@ The user is reviewing an issue analysis and wants to add a custom implementation
 %s
 
 ## Task
-Create a new option based on the user's description. Return a JSON object for the single option:
-
-{
-  "id": "opt_custom_N",
-  "title": "Short descriptive title",
-  "description": "Brief one-line description",
-  "pros": ["Advantage 1", "Advantage 2", "..."],
-  "cons": ["Disadvantage 1", "Disadvantage 2", "..."],
-  "recommended": false,
-  "details": "Detailed markdown explanation of this approach..."
-}
+Create a new option based on the user's description.
 
 ## Requirements
 1. Generate a unique ID (e.g., "opt_custom_1" if no custom options exist)
 2. Provide at least 2 pros and 2 cons
 3. Set "recommended": false (user will choose if they want this option)
-4. The "details" field should be comprehensive
-5. Do NOT wrap the JSON in code blocks - return raw JSON only
-%s
-%s`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription, jsonFormattingRules, criticalOutputRequirements)
+4. The "details" field should be comprehensive`, readOnlyConstraints, analysis.Summary, existingOptions, userDescription)
 }
 
 // BuildChangeLogPrompt builds the prompt for generating a change log entry

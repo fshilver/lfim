@@ -84,11 +84,11 @@ func (m *Model) executeAnalyze() {
 	}
 
 	briefPath := m.storage.BriefPath(issue.ID)
-	// Use JSON prompt for structured output
+	// Use simplified prompt with JSON schema validation
 	prompt := claude.BuildAnalysisPromptJSON(brief.Content, briefPath)
 
 	m.statusMsg = fmt.Sprintf("Analyzing %s...", issue.ID)
-	m.claude.RunAsync(issue.ID, "analyze", prompt, "", "", m.resultChan)
+	m.claude.RunWithJSONSchemaAsync(issue.ID, "analyze", prompt, claude.AnalysisSchema, "", "", m.resultChan)
 }
 
 func (m Model) executeAnalyzeFor(issue *model.Issue) (Model, tea.Cmd) {
@@ -103,11 +103,11 @@ func (m Model) executeAnalyzeFor(issue *model.Issue) (Model, tea.Cmd) {
 	}
 
 	briefPath := m.storage.BriefPath(issue.ID)
-	// Use JSON prompt for structured output
+	// Use simplified prompt with JSON schema validation
 	prompt := claude.BuildAnalysisPromptJSON(brief.Content, briefPath)
 
 	m.statusMsg = fmt.Sprintf("Analyzing %s...", issue.ID)
-	m.claude.RunAsync(issue.ID, "analyze", prompt, "", "", m.resultChan)
+	m.claude.RunWithJSONSchemaAsync(issue.ID, "analyze", prompt, claude.AnalysisSchema, "", "", m.resultChan)
 
 	return m, nil
 }
@@ -529,7 +529,7 @@ func (m Model) executeAddOption(description string) (Model, tea.Cmd) {
 	prompt := claude.BuildAddOptionPrompt(m.analysis, description)
 
 	m.statusMsg = fmt.Sprintf("Adding option to %s...", issue.ID)
-	m.claude.RunAsync(issue.ID, "add-option", prompt, "", sessionID, m.resultChan)
+	m.claude.RunWithJSONSchemaAsync(issue.ID, "add-option", prompt, claude.OptionSchema, "", sessionID, m.resultChan)
 
 	return m, nil
 }
