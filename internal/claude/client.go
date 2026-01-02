@@ -8,8 +8,9 @@ import (
 
 // Response represents the Claude CLI JSON response
 type Response struct {
-	Result    string `json:"result"`
-	SessionID string `json:"session_id,omitempty"`
+	Result           string                 `json:"result"`
+	SessionID        string                 `json:"session_id,omitempty"`
+	StructuredOutput map[string]interface{} `json:"structured_output,omitempty"`
 }
 
 // TaskResult represents the result of an async Claude task
@@ -81,6 +82,26 @@ func (c *Client) parseResponse(jsonOutput string) (bool, string, string) {
 	return true, resp.Result, resp.SessionID
 }
 
+// parseResponseWithSchema parses Claude CLI JSON output with structured_output
+func (c *Client) parseResponseWithSchema(jsonOutput string) (bool, string, string) {
+	var resp Response
+	if err := json.Unmarshal([]byte(jsonOutput), &resp); err != nil {
+		// Fallback: treat as plain text
+		return true, strings.TrimSpace(jsonOutput), ""
+	}
+
+	// If structured_output exists and is not empty, marshal it back to JSON string
+	if len(resp.StructuredOutput) > 0 {
+		jsonBytes, err := json.Marshal(resp.StructuredOutput)
+		if err == nil {
+			return true, string(jsonBytes), resp.SessionID
+		}
+	}
+
+	// Fallback to result field for backward compatibility
+	return true, resp.Result, resp.SessionID
+}
+
 // IsAvailable checks if claude CLI is available
 func IsAvailable() bool {
 	cmd := exec.Command("claude", "--version")
@@ -131,7 +152,7 @@ func (c *Client) RunWithJSONSchema(prompt string, schema string, model string, r
 		return false, err.Error(), ""
 	}
 
-	return c.parseResponse(string(output))
+	return c.parseResponseWithSchema(string(output))
 }
 
 // RunWithJSONSchemaAsync executes Claude CLI with JSON schema in a goroutine

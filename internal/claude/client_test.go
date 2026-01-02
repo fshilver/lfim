@@ -94,3 +94,93 @@ func BenchmarkCompressJSON(b *testing.B) {
 		_ = compressJSON(AnalysisSchema)
 	}
 }
+
+func TestParseResponseWithSchema(t *testing.T) {
+	client := &Client{}
+
+	tests := []struct {
+		name              string
+		input             string
+		wantSuccess       bool
+		wantResultContain string
+		wantSessionID     string
+	}{
+		{
+			name: "with structured_output field",
+			input: `{
+				"type": "result",
+				"result": "I've completed the analysis",
+				"session_id": "test-session-123",
+				"structured_output": {
+					"summary": "Test summary",
+					"options": [{"id": "opt1", "title": "Option 1"}]
+				}
+			}`,
+			wantSuccess:       true,
+			wantResultContain: `"summary":"Test summary"`,
+			wantSessionID:     "test-session-123",
+		},
+		{
+			name: "with empty structured_output",
+			input: `{
+				"type": "result",
+				"result": "Fallback result text",
+				"session_id": "test-session-456",
+				"structured_output": {}
+			}`,
+			wantSuccess:       true,
+			wantResultContain: "Fallback result text",
+			wantSessionID:     "test-session-456",
+		},
+		{
+			name: "without structured_output field",
+			input: `{
+				"type": "result",
+				"result": "Plain result text",
+				"session_id": "test-session-789"
+			}`,
+			wantSuccess:       true,
+			wantResultContain: "Plain result text",
+			wantSessionID:     "test-session-789",
+		},
+		{
+			name:              "invalid JSON",
+			input:             `{"invalid": json}`,
+			wantSuccess:       true,
+			wantResultContain: `{"invalid": json}`,
+			wantSessionID:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			success, result, sessionID := client.parseResponseWithSchema(tt.input)
+
+			if success != tt.wantSuccess {
+				t.Errorf("parseResponseWithSchema() success = %v, want %v", success, tt.wantSuccess)
+			}
+
+			if tt.wantResultContain != "" && !contains(result, tt.wantResultContain) {
+				t.Errorf("parseResponseWithSchema() result = %v, want to contain %v", result, tt.wantResultContain)
+			}
+
+			if sessionID != tt.wantSessionID {
+				t.Errorf("parseResponseWithSchema() sessionID = %v, want %v", sessionID, tt.wantSessionID)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
