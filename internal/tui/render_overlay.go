@@ -19,6 +19,20 @@ func cursorIndicator(currentIdx, targetIdx int) string {
 	return "  "
 }
 
+// formatStagedFileList builds a formatted list of staged files with max limit
+func (m Model) formatStagedFileList(maxFiles int) string {
+	var fileList string
+	for i, file := range m.stagedFiles {
+		if i >= maxFiles {
+			remaining := len(m.stagedFiles) - maxFiles
+			fileList += fmt.Sprintf("  ... and %d more file(s)\n", remaining)
+			break
+		}
+		fileList += fmt.Sprintf("  • %s\n", file)
+	}
+	return fileList
+}
+
 // placeOverlay places the overlay centered on top of the background
 func placeOverlay(width, height int, overlay, background string) string {
 	overlayWidth := lipgloss.Width(overlay)
@@ -411,16 +425,7 @@ func (m Model) renderStagedChangesErrorOverlay() string {
 	title := fmt.Sprintf("%s Action Blocked", OverlayIcons.Error)
 
 	// Build list of staged files
-	fileList := ""
-	maxFiles := 10
-	for i, file := range m.stagedFiles {
-		if i >= maxFiles {
-			remaining := len(m.stagedFiles) - maxFiles
-			fileList += fmt.Sprintf("  ... and %d more file(s)\n", remaining)
-			break
-		}
-		fileList += fmt.Sprintf("  • %s\n", file)
-	}
+	fileList := m.formatStagedFileList(10)
 
 	// Content explaining the issue
 	content := "Cannot proceed with this action.\n\n" +
@@ -445,16 +450,7 @@ func (m Model) renderStagedChangesWarningOverlay() string {
 	title := fmt.Sprintf("%s Staged Changes Detected", OverlayIcons.Confirm)
 
 	// Build list of staged files
-	fileList := ""
-	maxFiles := 10
-	for i, file := range m.stagedFiles {
-		if i >= maxFiles {
-			remaining := len(m.stagedFiles) - maxFiles
-			fileList += fmt.Sprintf("  ... and %d more file(s)\n", remaining)
-			break
-		}
-		fileList += fmt.Sprintf("  • %s\n", file)
-	}
+	fileList := m.formatStagedFileList(10)
 
 	// Content explaining the warning with option to proceed
 	content := "You have staged changes in your repository.\n\n" +
