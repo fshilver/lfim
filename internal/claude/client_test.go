@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -160,7 +161,7 @@ func TestParseResponseWithSchema(t *testing.T) {
 				t.Errorf("parseResponseWithSchema() success = %v, want %v", success, tt.wantSuccess)
 			}
 
-			if tt.wantResultContain != "" && !contains(result, tt.wantResultContain) {
+			if tt.wantResultContain != "" && !strings.Contains(result, tt.wantResultContain) {
 				t.Errorf("parseResponseWithSchema() result = %v, want to contain %v", result, tt.wantResultContain)
 			}
 
@@ -169,18 +170,4 @@ func TestParseResponseWithSchema(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
