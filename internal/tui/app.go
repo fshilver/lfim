@@ -51,7 +51,8 @@ const (
 	StateOptionSelect
 	StateModelSelect
 	StateUncommittedChangesError
-	StateStagedChangesError
+	StateStagedChangesError      // Error state: dismiss only (for hard blocks)
+	StateStagedChangesWarning    // Warning state: user can choose to proceed or cancel
 )
 
 // InputMode represents what input is being collected

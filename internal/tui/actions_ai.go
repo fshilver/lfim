@@ -390,12 +390,13 @@ func (m Model) implementIssue() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Check git status - block only on staged changes, warn on unstaged
+	// Check git status - warn on staged changes, allow user to proceed
 	m.updateGitStatus()
 	if m.gitStatus.HasStaged {
-		return m, func() tea.Msg {
-			return stagedChangesErrorMsg{stagedFiles: m.gitStatus.StagedFiles}
-		}
+		m.state = StateStagedChangesWarning
+		m.stagedFiles = m.gitStatus.StagedFiles
+		m.pendingRetryIssue = issue
+		return m, nil
 	}
 
 	// Go to model selection (model selection serves as implicit confirmation)

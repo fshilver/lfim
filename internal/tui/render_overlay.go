@@ -439,3 +439,37 @@ func (m Model) renderStagedChangesErrorOverlay() string {
 
 	return m.renderBaseOverlay(title, content, footer, 65)
 }
+
+func (m Model) renderStagedChangesWarningOverlay() string {
+	// Build warning message with warning icon
+	title := fmt.Sprintf("%s Staged Changes Detected", OverlayIcons.Confirm)
+
+	// Build list of staged files
+	fileList := ""
+	maxFiles := 10
+	for i, file := range m.stagedFiles {
+		if i >= maxFiles {
+			remaining := len(m.stagedFiles) - maxFiles
+			fileList += fmt.Sprintf("  ... and %d more file(s)\n", remaining)
+			break
+		}
+		fileList += fmt.Sprintf("  • %s\n", file)
+	}
+
+	// Content explaining the warning with option to proceed
+	content := "You have staged changes in your repository.\n\n" +
+		"Staged files:\n" +
+		fileList + "\n" +
+		"WARNING: Proceeding will mix these staged changes\n" +
+		"with implementation changes. This may make it harder\n" +
+		"to separate changes later.\n\n" +
+		"Recommended actions:\n" +
+		"  • Commit staged changes first: 'git commit -m \"...\"'\n" +
+		"  • Or unstage them: 'git reset HEAD'\n\n" +
+		"Do you want to proceed anyway?"
+
+	// Footer with proceed/cancel options
+	footer := "[y] Proceed Anyway    [n/Esc] Cancel"
+
+	return m.renderBaseOverlay(title, content, footer, 65)
+}

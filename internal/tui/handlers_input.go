@@ -202,3 +202,24 @@ func (m Model) handleStagedChangesErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	}
 	return m, nil
 }
+
+func (m Model) handleStagedChangesWarningKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		// User chooses to proceed despite staged files
+		m.state = StateModelSelect
+		m.stagedFiles = nil
+		m.pendingModel = ModelHaiku // default to fastest model
+		m.modelCursor = 2           // haiku index
+		// pendingRetryIssue is already set by implementIssue()
+		return m, nil
+	case "n", "esc", "q":
+		// User cancels the implementation
+		m.state = StateNormal
+		m.pendingRetryIssue = nil
+		m.stagedFiles = nil
+		m.statusMsg = "Implementation cancelled"
+		return m, nil
+	}
+	return m, nil
+}

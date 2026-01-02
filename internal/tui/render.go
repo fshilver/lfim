@@ -96,6 +96,8 @@ func (m Model) View() string {
 		overlay = m.renderUncommittedChangesErrorOverlay()
 	case StateStagedChangesError:
 		overlay = m.renderStagedChangesErrorOverlay()
+	case StateStagedChangesWarning:
+		overlay = m.renderStagedChangesWarningOverlay()
 	}
 
 	// Combine vertically
