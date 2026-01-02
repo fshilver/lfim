@@ -10,13 +10,11 @@ func TestCompressJSON(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		wantErr  bool
 		validate func(t *testing.T, result string)
 	}{
 		{
-			name: "compress AnalysisSchema",
+			name:  "compress AnalysisSchema",
 			input: AnalysisSchema,
-			wantErr: false,
 			validate: func(t *testing.T, result string) {
 				// Verify it's valid JSON
 				var obj interface{}
@@ -32,9 +30,8 @@ func TestCompressJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "compress OptionSchema",
+			name:  "compress OptionSchema",
 			input: OptionSchema,
-			wantErr: false,
 			validate: func(t *testing.T, result string) {
 				// Verify it's valid JSON
 				var obj interface{}
@@ -50,9 +47,8 @@ func TestCompressJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "handle invalid JSON",
+			name:  "handle invalid JSON",
 			input: `{"invalid": json}`,
-			wantErr: false,
 			validate: func(t *testing.T, result string) {
 				// Should return original string on error
 				if result != `{"invalid": json}` {
@@ -70,7 +66,6 @@ func TestCompressJSON(t *testing.T) {
     }
   }
 }`,
-			wantErr: false,
 			validate: func(t *testing.T, result string) {
 				expected := `{"properties":{"name":{"type":"string"}},"type":"object"}`
 				if result != expected {
